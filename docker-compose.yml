@@ -31,12 +31,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "3002:3002"
     environment:
-      DATABASE_URL: "postgresql://quickly_user:quickly_pass@postgres:5432/quickly_db"
+      DATABASE_URL: "postgresql://postgres:@localhost:5432/marketplace"
       REDIS_URL: "redis://redis:6379"
       NODE_ENV: "development"
-      PORT: 3001
+      PORT: 3002
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,8 +54,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "http://localhost:3001"
-      NEXT_PUBLIC_WS_URL: "ws://localhost:3001"
+      NEXT_PUBLIC_API_URL: "http://localhost:3000"
+      NEXT_PUBLIC_WS_URL: "ws://localhost:3000"
     depends_on:
       - backend
     volumes:

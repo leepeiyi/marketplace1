@@ -28,6 +28,7 @@ const AcceptJobSchema = z.object({
   jobId: z.string()
 });
 
+
 // Validation middleware
 const validateBody = (schema) => {
   return (req, res, next) => {

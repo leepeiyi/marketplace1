@@ -67,4 +67,35 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Get user by email
+router.get('/by-email/:email', async (req, res) => {
+  const { email } = req.params;
+  
+  try {
+    const user = await req.prisma.user.findUnique({
+      where: { email },
+      include: {
+        provider: {
+          include: {
+            categories: {
+              include: {
+                category: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Error getting user by email:', error);
+    res.status(500).json({ error: 'Failed to get user' });
+  }
+});
+
 export { router as userRoutes };
