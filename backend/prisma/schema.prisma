@@ -1,0 +1,231 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  phone     String?
+  role      UserRole @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Customer relationships
+  customerJobs Job[] @relation("CustomerJobs")
+  reviews      Review[]
+
+  // Provider relationships
+  provider         Provider?
+  providerJobs     Job[]     @relation("ProviderJobs")
+  bids             Bid[]
+  receivedReviews  Review[]  @relation("ProviderReviews")
+
+  @@map("users")
+}
+
+model Provider {
+  id              String           @id @default(cuid())
+  userId          String           @unique
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAvailable     Boolean          @default(true)
+  latitude        Float
+  longitude       Float
+  completedJobs   Int              @default(0)
+  averageRating   Float            @default(0.0)
+  totalRatings    Int              @default(0)
+  tier            ProviderTier     @default(TIER_B)
+  reliabilityScore Float           @default(100.0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  categories      ProviderCategory[]
+
+  @@map("providers")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  icon        String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  jobs              Job[]
+  providerCategories ProviderCategory[]
+  priceHistory      PriceHistory[]
+
+  @@map("categories")
+}
+
+model ProviderCategory {
+  id         String   @id @default(cuid())
+  providerId String
+  categoryId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([providerId, categoryId])
+  @@map("provider_categories")
+}
+
+model Job {
+  id                String        @id @default(cuid())
+  customerId        String
+  customer          User          @relation("CustomerJobs", fields: [customerId], references: [id])
+  providerId        String?
+  provider          User?         @relation("ProviderJobs", fields: [providerId], references: [id])
+  categoryId        String
+  category          Category      @relation(fields: [categoryId], references: [id])
+  
+  title             String
+  description       String
+  type              JobType
+  status            JobStatus     @default(PENDING)
+  
+  // Pricing
+  estimatedPrice    Float?
+  acceptPrice       Float?
+  finalPrice        Float?
+  
+  // Location & timing
+  latitude          Float
+  longitude         Float
+  address           String
+  scheduledAt       DateTime?
+  completedAt       DateTime?
+  
+  // Quick book specific
+  arrivalWindow     Int?          // hours from now
+  quickBookDeadline DateTime?
+  
+  // Post & quote specific
+  biddingEndsAt     DateTime?
+  broadcastStage    Int           @default(1)
+  lastBroadcastAt   DateTime?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  bids              Bid[]
+  escrow            Escrow?
+  review            Review?
+
+  @@map("jobs")
+}
+
+model Bid {
+  id          String     @id @default(cuid())
+  jobId       String
+  job         Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  providerId  String
+  provider    User       @relation(fields: [providerId], references: [id])
+  
+  price       Float
+  note        String?
+  estimatedEta Int       // minutes
+  status      BidStatus  @default(PENDING)
+  score       Float?     // calculated ranking score
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([jobId, providerId]) // One bid per provider per job
+  @@map("bids")
+}
+
+model Escrow {
+  id              String       @id @default(cuid())
+  jobId           String       @unique
+  job             Job          @relation(fields: [jobId], references: [id])
+  amount          Float
+  status          EscrowStatus @default(HELD)
+  heldAt          DateTime     @default(now())
+  releasedAt      DateTime?
+  refundedAt      DateTime?
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("escrows")
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  jobId       String   @unique
+  job         Job      @relation(fields: [jobId], references: [id])
+  customerId  String
+  customer    User     @relation(fields: [customerId], references: [id])
+  providerId  String
+  provider    User     @relation("ProviderReviews", fields: [providerId], references: [id])
+  
+  rating      Int      // 1-5 stars
+  comment     String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("reviews")
+}
+
+model PriceHistory {
+  id         String   @id @default(cuid())
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  price      Float
+  completedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@map("price_history")
+}
+
+// Enums
+enum UserRole {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum ProviderTier {
+  TIER_A
+  TIER_B
+}
+
+enum JobType {
+  QUICK_BOOK
+  POST_QUOTE
+}
+
+enum JobStatus {
+  PENDING
+  BROADCASTED
+  BOOKED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED_BY_CUSTOMER
+  CANCELLED_BY_PROVIDER
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum EscrowStatus {
+  HELD
+  RELEASED
+  REFUNDED
+}
