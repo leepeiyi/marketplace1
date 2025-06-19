@@ -18,12 +18,11 @@
     "test:ci": "npm run test:setup && npm run test && npm run test:teardown",
     "test:setup": "npm run db:test:setup",
     "test:teardown": "npm run db:test:teardown",
-    "test:integration:basic": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest src/tests/integration/websocket.test.js --runInBand",
     
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "node src/scripts/seed.js",
+    "db:seed": "node dist/scripts/seed.js",
     "db:reset": "prisma migrate reset --force",
     "db:test:setup": "NODE_ENV=test prisma migrate deploy",
     "db:test:teardown": "NODE_ENV=test prisma migrate reset --force --skip-seed",
