@@ -79,7 +79,11 @@ export function ProviderDashboard() {
           receivedAt: Date.now(),
         };
 
-        setQuickBookJobs((prev) => [newJob, ...prev]);
+        // ✅ Prevent duplicate job insert
+        setQuickBookJobs((prev) => {
+          const alreadyExists = prev.some((job) => job.id === newJob.id);
+          return alreadyExists ? prev : [newJob, ...prev];
+        });
       } else if (jobData.type === "POST_QUOTE") {
         const newJob: PostQuoteJob = {
           id: jobData.id,
@@ -97,10 +101,14 @@ export function ProviderDashboard() {
           hasUserBid: false,
         };
 
-        setPostQuoteJobs((prev) => [newJob, ...prev]);
+        // ✅ Prevent duplicate quote job
+        setPostQuoteJobs((prev) => {
+          const alreadyExists = prev.some((job) => job.id === newJob.id);
+          return alreadyExists ? prev : [newJob, ...prev];
+        });
       }
 
-      // Show notification
+      // ✅ Show notification
       addNotification({
         id: Date.now().toString(),
         type: "info",
@@ -108,21 +116,53 @@ export function ProviderDashboard() {
         message: `${jobData.title} - $${jobData.estimatedPrice} (${jobData.distance}km away)`,
         timestamp: new Date(),
       });
+
+      loadAvailableJobs();
     };
 
+    const handleJobUpdate = (event: any) => {
+      const jobData = event.detail;
+      console.log("🔄 Job updated:", jobData);
+
+      // Update bid counts for post quote jobs
+      if (jobData.type === "BID_SUBMITTED") {
+        setPostQuoteJobs((prev) =>
+          prev.map((job) =>
+            job.id === jobData.jobId
+              ? { ...job, bidsCount: jobData.bidsCount }
+              : job
+          )
+        );
+      }
+    };
     const handleJobTaken = (event: any) => {
-      const { jobId } = event.detail;
+      const { jobId, jobTitle, providerName } = event.detail;
+      console.log(event);
+      console.log(`⚠️ Job taken: ${jobId} by ${providerName}`);
+
+      // ✅ Remove job from both views
       setQuickBookJobs((prev) => prev.filter((job) => job.id !== jobId));
       setPostQuoteJobs((prev) => prev.filter((job) => job.id !== jobId));
+
+      // ✅ Show notification to inform other providers
+      addNotification({
+        id: Date.now().toString(),
+        type: "warning",
+        title: "Job Taken",
+        message: `"${jobTitle}" was accepted by another provider`,
+        timestamp: new Date(),
+      });
     };
 
     // Listen for custom events from WebSocketContext
     window.addEventListener("new_job_available", handleNewJob);
     window.addEventListener("job_taken", handleJobTaken);
+    window.addEventListener("job_update", handleJobUpdate);
 
     return () => {
       window.removeEventListener("new_job_available", handleNewJob);
       window.removeEventListener("job_taken", handleJobTaken);
+      window.removeEventListener("job_update", handleJobUpdate);
     };
   }, [addNotification]);
 
@@ -154,9 +194,9 @@ export function ProviderDashboard() {
             quickJobs.push({
               id: job.id,
               title: job.title,
-              category: job.category?.name || 'Unknown Category',
+              category: job.category?.name || "Unknown Category",
               address: job.address,
-              customerName: job.customer?.name || 'Unknown Customer',
+              customerName: job.customer?.name || "Unknown Customer",
               estimatedPrice: job.estimatedPrice,
               distance: job.distance,
               quickBookDeadline: job.quickBookDeadline,
@@ -192,9 +232,13 @@ export function ProviderDashboard() {
               id: job.id,
               title: job.title,
               description: job.description,
-              category: job.category || { id: '', name: 'Unknown Category', icon: '📋' },
+              category: job.category || {
+                id: "",
+                name: "Unknown Category",
+                icon: "📋",
+              },
               address: job.address,
-              customer: job.customer || { name: 'Unknown Customer' },
+              customer: job.customer || { name: "Unknown Customer" },
               estimatedPrice: job.estimatedPrice,
               acceptPrice: job.acceptPrice,
               distance: job.distance,
@@ -259,6 +303,9 @@ export function ProviderDashboard() {
           message: "You have successfully accepted the job",
           timestamp: new Date(),
         });
+
+        // Note: The WebSocket should handle notifying other providers
+        // via the "job_taken" event, so we don't need to manually emit it here
       } else if (response.status === 409) {
         // Job already taken
         setQuickBookJobs((prev) => prev.filter((job) => job.id !== jobId));
@@ -302,7 +349,9 @@ export function ProviderDashboard() {
     setSelectedJob(job);
     setBidPrice(job.estimatedPrice ? job.estimatedPrice.toString() : "");
     setBidNote(
-      `I can help with ${job.title}. I have experience with ${job.category?.name || 'this type of'} services and can complete this work efficiently.`
+      `I can help with ${job.title}. I have experience with ${
+        job.category?.name || "this type of"
+      } services and can complete this work efficiently.`
     );
     setBidEta(60);
     setShowBidModal(true);
@@ -562,7 +611,7 @@ export function ProviderDashboard() {
                               {job.title}
                             </h4>
                             <p className="text-sm text-gray-600">
-                              {job.category?.name || 'Unknown Category'}
+                              {job.category?.name || "Unknown Category"}
                             </p>
                             <p className="text-sm text-gray-500">
                               {job.address}
@@ -629,13 +678,15 @@ export function ProviderDashboard() {
               {/* Job Details */}
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
                 <div className="flex items-start gap-3">
-                  <span className="text-2xl">{selectedJob.category?.icon || '📋'}</span>
+                  <span className="text-2xl">
+                    {selectedJob.category?.icon || "📋"}
+                  </span>
                   <div className="flex-1">
                     <h4 className="font-medium text-gray-900">
                       {selectedJob.title}
                     </h4>
                     <p className="text-sm text-gray-600">
-                      {selectedJob.category?.name || 'Unknown Category'}
+                      {selectedJob.category?.name || "Unknown Category"}
                     </p>
                     <p className="text-sm text-gray-500 mt-1">
                       {selectedJob.address}
@@ -874,10 +925,12 @@ function PostQuoteJobCard({
       {/* Job Header */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-start gap-3">
-          <span className="text-2xl">{job.category?.icon || '📋'}</span>
+          <span className="text-2xl">{job.category?.icon || "📋"}</span>
           <div>
             <h4 className="font-medium text-gray-900">{job.title}</h4>
-            <p className="text-sm text-gray-600">{job.category?.name || 'Unknown Category'}</p>
+            <p className="text-sm text-gray-600">
+              {job.category?.name || "Unknown Category"}
+            </p>
             <p className="text-sm text-gray-500">{job.address}</p>
           </div>
         </div>
@@ -898,7 +951,7 @@ function PostQuoteJobCard({
 
       {/* Job Info */}
       <div className="flex items-center gap-4 text-xs text-gray-600 mb-3">
-        <span>Customer: {job.customer?.name || 'Unknown Customer'}</span>
+        <span>Customer: {job.customer?.name || "Unknown Customer"}</span>
         <span>Posted: {formatTimeAgo(job.createdAt)}</span>
         {job.bidsCount !== undefined && (
           <span>

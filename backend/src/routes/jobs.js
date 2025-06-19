@@ -294,9 +294,26 @@ router.post(
   validateBody(AcceptJobSchema),
   async (req, res) => {
     try {
-      const jobService = new JobService(req.prisma, req.app.get("wsService"));
+      const wsService = req.app.get("wsService");
+      const jobService = new JobService(req.prisma, wsService);
       const { jobId } = req.body;
+
       const result = await jobService.acceptQuickBookJob(jobId, req.userId);
+
+      // ✅ Broadcast to other providers that job has been taken
+      if (result?.job?.id && result?.job?.status === "BOOKED") {
+        wsService.broadcast(
+          "provider",
+          {
+            type: "job_taken",
+            jobId: result.job.id,
+            jobTitle: result.job.title, // ✅ ADD THIS
+            providerName: result.provider?.name || "A provider", // ✅ ADD THIS
+          },
+          [req.userId]
+        ); // ✅ Exclude the one who accepted
+      }
+
       res.json(result);
     } catch (error) {
       console.error("Error accepting job:", error);

@@ -152,13 +152,15 @@ class WebSocketService {
   }
 
   // Broadcast to all users of a specific type
-  broadcast(userType, data) {
+  broadcast(userType, data, excludeIds = []) {
     let sentCount = 0;
 
     for (const [userId, connection] of this.connections.entries()) {
-      const connectionUserType = this.userTypes.get(userId);
-
-      if (connectionUserType === userType && connection.readyState === 1) {
+      if (
+        this.userTypes.get(userId) === userType &&
+        connection.readyState === 1 &&
+        !excludeIds.includes(userId)
+      ) {
         try {
           connection.send(
             JSON.stringify({
