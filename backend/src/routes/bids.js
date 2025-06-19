@@ -256,15 +256,21 @@ router.get("/job/:jobId", async (req, res) => {
 });
 
 // Get ranked bids for a job (for customer bid tracking)
+// Define the weights
+const WEIGHTS = {
+  price: 0.4,
+  rating: 0.3,
+  eta: 0.2,
+  reliability: 0.1, // optional if you want to use it
+};
+
 router.get("/:jobId/ranked-bids", requireAuth, async (req, res) => {
   const { jobId } = req.params;
 
   try {
-    // Get all bids for the job with provider details
     const bids = await req.prisma.bid.findMany({
       where: {
-        jobId: jobId,
-        // Only show pending bids (not rejected ones)
+        jobId,
         status: { in: ["PENDING", "ACCEPTED"] },
       },
       include: {
@@ -274,38 +280,44 @@ router.get("/:jobId/ranked-bids", requireAuth, async (req, res) => {
           },
         },
       },
-      orderBy: [
-        { price: "asc" }, // Sort by price first (lowest first)
-        { provider: { provider: { averageRating: "desc" } } }, // Then by rating
-        { createdAt: "asc" }, // Then by time submitted
-      ],
     });
 
-    // Format the response to match what the frontend expects
-    const formattedBids = bids.map((bid) => ({
-      id: bid.id,
-      price: bid.price,
-      note: bid.note,
-      estimatedEta: bid.estimatedEta,
-      createdAt: bid.createdAt,
-      status: bid.status,
-      provider: {
-        provider: {
-          id: bid.provider.provider.id,
-          name: bid.provider.provider.name,
-          averageRating: bid.provider.provider.averageRating,
-          totalJobs: bid.provider.provider.totalJobs,
-          phone: bid.provider.provider.phone,
-          yearsExperience: bid.provider.provider.yearsExperience,
-          badges: bid.provider.provider.badges || [],
-        },
-      },
-    }));
+    // Normalization helpers
+    const minPrice = Math.min(...bids.map((b) => b.price));
+    const maxPrice = Math.max(...bids.map((b) => b.price));
+    const minEta = Math.min(...bids.map((b) => b.estimatedEta));
+    const maxEta = Math.max(...bids.map((b) => b.estimatedEta));
 
-    res.json(formattedBids);
+    const normalize = (val, min, max) =>
+      max === min ? 1 : (val - min) / (max - min);
+
+    const rankedBids = bids.map((bid) => {
+      const provider = bid.provider?.provider;
+
+      const normPrice = 1 - normalize(bid.price, minPrice, maxPrice); // lower price = higher score
+      const normRating = (provider?.averageRating || 0) / 5; // already 0–1
+      const normEta = 1 - normalize(bid.estimatedEta, minEta, maxEta); // lower ETA = higher score
+      const normReliability = (provider?.reliabilityScore || 100) / 100;
+
+      const score =
+        normPrice * WEIGHTS.price +
+        normRating * WEIGHTS.rating +
+        normEta * WEIGHTS.eta +
+        normReliability * WEIGHTS.reliability;
+
+      return {
+        ...bid,
+        rank_score: Math.round(score * 100) / 100, // round to 2dp
+      };
+    });
+
+    // Sort by score descending
+    rankedBids.sort((a, b) => b.rank_score - a.rank_score);
+
+    res.json(rankedBids);
   } catch (error) {
-    console.error("Error getting ranked bids:", error);
-    res.status(500).json({ error: "Failed to get bids" });
+    console.error("❌ Error computing ranked bids:", error);
+    res.status(500).json({ error: "Failed to compute bid rankings" });
   }
 });
 
@@ -446,7 +458,7 @@ router.post("/:bidId/accept", requireAuth, async (req, res) => {
       redirect: {
         url: "/dashboard",
         message: `Great! You've hired ${bid.provider.provider.name} for $${bid.price}. They'll contact you soon!`,
-        type: "success"
+        type: "success",
       },
     });
   } catch (error) {
