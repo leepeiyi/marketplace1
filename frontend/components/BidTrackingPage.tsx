@@ -409,7 +409,7 @@ export default function BidTrackingPage() {
         }));
         
         // Redirect to dashboard
-        router.push('/dashboard');
+        router.push('/');
       } else {
         const error = await response.json();
         throw new Error(error.error || 'Failed to accept bid');

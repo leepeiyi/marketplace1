@@ -3,9 +3,8 @@
 import { useState, useEffect } from "react";
 import { useUser } from "@/contexts/UserContext";
 import { useWebSocket } from "@/contexts/WebSocketContext";
-import { useRouter } from 'next/navigation';
- 
-
+import { useRouter } from "next/navigation";
+import * as Slider from "@radix-ui/react-slider";
 
 interface Category {
   id: string;
@@ -41,7 +40,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002";
 export function PostQuoteModal({ isOpen, onClose }: PostQuoteModalProps) {
   const { user } = useUser();
   const { addNotification } = useWebSocket();
-   const router = useRouter();
+  const router = useRouter();
 
   // Form state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -118,7 +117,7 @@ export function PostQuoteModal({ isOpen, onClose }: PostQuoteModalProps) {
     setIsLoadingPrice(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/jobs/price-guidance/${categoryId}`,
+        `${API_URL}/api/categories/price-range/${categoryId}`,
         {
           headers: {
             "x-user-id": user?.id || "",
@@ -128,16 +127,20 @@ export function PostQuoteModal({ isOpen, onClose }: PostQuoteModalProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setPriceGuidance(data);
+        setPriceGuidance({
+          p10: data.minPrice,
+          p50: data.suggestedPrice,
+          p90: data.maxPrice,
+          dataPoints: 100, // or omit if not using
+        });
 
-        // Auto-suggest accept price as 120% of median
-        if (data.p50 && !acceptPrice) {
-          const suggestedPrice = Math.round(data.p50 * 1.2);
-          setAcceptPrice(suggestedPrice.toString());
+        if (data.suggestedPrice && !acceptPrice) {
+          const suggested = Math.round(data.suggestedPrice * 1.2);
+          setAcceptPrice(suggested.toString());
         }
       }
     } catch (error) {
-      console.error("Error loading price guidance:", error);
+      console.error("Error loading price range:", error);
     } finally {
       setIsLoadingPrice(false);
     }
@@ -565,28 +568,48 @@ export function PostQuoteModal({ isOpen, onClose }: PostQuoteModalProps) {
 
                 {useAcceptPrice && (
                   <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm text-gray-600">$</span>
-                      <input
-                        type="number"
-                        value={acceptPrice}
-                        onChange={(e) => setAcceptPrice(e.target.value)}
-                        placeholder="120"
-                        min="1"
-                        step="1"
-                        className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      />
-                      <span className="text-sm text-gray-600">
-                        {priceGuidance &&
-                          acceptPrice &&
-                          `(${Math.round(
-                            (parseFloat(acceptPrice) / priceGuidance.p50) * 100
-                          )}% of market rate)`}
-                      </span>
+                    <div className="mb-2">
+                      <Slider.Root
+                        className="relative flex items-center select-none touch-none w-full h-5"
+                        min={priceGuidance?.p10 || 0}
+                        max={priceGuidance?.p90 || 1000}
+                        step={1}
+                        value={[parseFloat(acceptPrice || "0")]}
+                        onValueChange={([val]) =>
+                          setAcceptPrice(val.toString())
+                        }
+                      >
+                        <Slider.Track className="bg-gray-200 relative grow rounded-full h-1">
+                          <Slider.Range className="absolute bg-orange-500 rounded-full h-full" />
+                        </Slider.Track>
+                        <Slider.Thumb
+                          className="block w-5 h-5 bg-white border-2 border-orange-500 rounded-full shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          aria-label="Accept Price"
+                        />
+                      </Slider.Root>
+
+                      <div className="text-sm mt-3 text-gray-700">
+                        Selected Accept Price:{" "}
+                        <span className="font-bold text-orange-600">
+                          ${acceptPrice}
+                        </span>
+                        <span className="ml-2 text-xs text-gray-500">
+                          (
+                          {priceGuidance?.p50
+                            ? `${Math.round(
+                                (parseFloat(acceptPrice || "0") /
+                                  priceGuidance.p50) *
+                                  100
+                              )}% of market`
+                            : "no guidance"}
+                          )
+                        </span>
+                      </div>
                     </div>
+
                     <p className="text-xs text-gray-500">
                       Any bid at or below this price will be automatically
-                      accepted
+                      accepted.
                     </p>
                   </div>
                 )}

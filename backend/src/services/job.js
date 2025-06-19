@@ -1,5 +1,7 @@
 // services/job.js
-export class JobService {
+import { WebSocketServer } from "ws";
+
+class JobService {
   constructor(prisma, wsService) {
     this.prisma = prisma;
     this.wsService = wsService;
@@ -153,81 +155,164 @@ export class JobService {
     }
   }
 
+  // Enhanced section of services/job.js - acceptQuickBookJob method with better concurrency handling
+
   async acceptQuickBookJob(jobId, providerId) {
     try {
-      // Check if job is still available
-      const job = await this.prisma.job.findUnique({
-        where: { id: jobId },
-        include: { customer: true },
+      console.log(
+        `🎯 Provider ${providerId} attempting to accept job ${jobId}`
+      );
+
+      // **ENHANCED: Use transaction for atomic check-and-update**
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Check job availability within transaction
+        const job = await prisma.job.findUnique({
+          where: { id: jobId },
+          include: {
+            customer: true,
+            category: true,
+          },
+        });
+
+        if (!job) {
+          throw new Error("Job not found");
+        }
+
+        if (job.type !== "QUICK_BOOK") {
+          throw new Error("Job is not a quick book job");
+        }
+
+        if (job.status !== "BROADCASTED") {
+          throw new Error("Job is no longer available");
+        }
+
+        if (job.providerId) {
+          throw new Error("Job already taken");
+        }
+
+        if (job.customerId === providerId) {
+          throw new Error("Cannot accept your own job");
+        }
+
+        // Check if provider exists and is available
+        const provider = await prisma.user.findUnique({
+          where: { id: providerId },
+          include: {
+            provider: {
+              include: {
+                categories: {
+                  where: { categoryId: job.categoryId },
+                },
+              },
+            },
+          },
+        });
+
+        if (!provider || !provider.provider) {
+          throw new Error("Provider profile not found");
+        }
+
+        if (!provider.provider.isAvailable) {
+          throw new Error("Provider is not available");
+        }
+
+        if (provider.provider.categories.length === 0) {
+          throw new Error("Provider not qualified for this job category");
+        }
+
+        // **CRITICAL: Atomic update with WHERE condition to prevent race conditions**
+        const updatedJob = await prisma.job.updateMany({
+          where: {
+            id: jobId,
+            status: "BROADCASTED",
+            providerId: null, // Only update if still unassigned
+          },
+          data: {
+            status: "BOOKED",
+            providerId: providerId,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Check if the update actually affected any rows
+        if (updatedJob.count === 0) {
+          throw new Error("Job already taken");
+        }
+
+        // Get the updated job
+        const finalJob = await prisma.job.findUnique({
+          where: { id: jobId },
+          include: {
+            customer: true,
+            category: true,
+            provider: {
+              include: {
+                provider: true,
+              },
+            },
+          },
+        });
+
+        // Create escrow for the job
+        const escrow = await prisma.escrow.create({
+          data: {
+            jobId: jobId,
+            amount: finalJob.estimatedPrice || 0,
+            status: "HELD",
+          },
+        });
+
+        return {
+          job: finalJob,
+          provider: finalJob.provider,
+          escrow,
+        };
       });
 
-      if (!job) {
-        throw new Error("Job not found");
-      }
+      console.log(
+        `✅ Job ${jobId} successfully accepted by provider ${providerId}`
+      );
 
-      if (job.status !== "PENDING") {
-        throw new Error("Job already taken");
-      }
+      // Send notifications outside of transaction
+      try {
+        if (this.wsService) {
+          // Notify customer
+          this.wsService.notifyCustomer(result.job.customerId, {
+            type: "job_accepted",
+            job: {
+              id: result.job.id,
+              title: result.job.title,
+              providerName: result.provider.provider.name,
+              providerPhone: result.provider.phone,
+              estimatedPrice: result.job.estimatedPrice,
+              arrivalWindow: result.job.arrivalWindow,
+            },
+            message: `Great! ${result.provider.provider.name} will be with you soon!`,
+          });
 
-      // Update job status and assign provider
-      const updatedJob = await this.prisma.job.update({
-        where: { id: jobId },
-        data: {
-          providerId,
-          status: "BOOKED",
-        },
-        include: {
-          provider: true,
-          customer: true,
-          category: true,
-        },
-      });
-
-      // Create escrow
-      await this.prisma.escrow.create({
-        data: {
-          jobId,
-          amount: job.estimatedPrice,
-          status: "HELD",
-        },
-      });
-
-      // Get provider details
-      const provider = await this.prisma.provider.findUnique({
-        where: { userId: providerId },
-        include: { user: true },
-      });
-
-      // Notify customer
-      this.wsService.notifyCustomer(job.customerId, {
-        type: "job_accepted",
-        job: {
-          id: updatedJob.id,
-          providerName: provider.user.name,
-          providerPhone: provider.user.phone,
-          estimatedArrival: updatedJob.quickBookDeadline,
-        },
-      });
-
-      // Notify other providers that job is taken
-      const allProviders = await this.prisma.user.findMany({
-        where: {
-          role: "PROVIDER",
-        },
-      });
-
-      for (const otherProvider of allProviders) {
-        if (otherProvider.id !== providerId) {
-          this.wsService.notifyProvider(otherProvider.id, {
-            type: "job_taken",
-            jobId,
+          // Notify provider
+          this.wsService.notifyProvider(providerId, {
+            type: "job_assigned",
+            job: {
+              id: result.job.id,
+              title: result.job.title,
+              address: result.job.address,
+              customerName: result.job.customer.name,
+              customerPhone: result.job.customer.phone,
+              category: result.job.category.name,
+            },
+            message: "Job assigned! Contact the customer to arrange service.",
           });
         }
+      } catch (notificationError) {
+        console.error("Notification error:", notificationError);
+        // Don't fail the job acceptance if notifications fail
       }
 
       return {
         success: true,
-        job: updatedJob,
+        job: result.job,
+        escrow: result.escrow,
         message: "Job accepted successfully",
       };
     } catch (error) {
@@ -235,25 +320,6 @@ export class JobService {
       throw error;
     }
   }
-
-  calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of Earth in kilometers
-    const dLat = this.deg2rad(lat2 - lat1);
-    const dLon = this.deg2rad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.deg2rad(lat1)) *
-        Math.cos(this.deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
-  }
-
-  deg2rad(deg) {
-    return deg * (Math.PI / 180);
-  }
-  // Add these methods to your existing JobService class in services/job.js
 
   async createPostQuoteJob(customerId, jobData) {
     try {
@@ -624,3 +690,5 @@ export class JobService {
     return updatedJob;
   }
 }
+
+export default JobService;

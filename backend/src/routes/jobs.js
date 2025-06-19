@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { JobService } from "../services/job.js";
+import JobService from "../services/job.js";
 
 const router = Router();
 

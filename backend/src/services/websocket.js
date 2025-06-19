@@ -1,7 +1,8 @@
 // services/websocket.js
 import { WebSocketServer } from 'ws';
 
-export class WebSocketService {
+
+class WebSocketService {
   constructor() {
     this.wss = null;
     this.connections = new Map(); // userId -> WebSocket connection
@@ -209,3 +210,5 @@ export class WebSocketService {
     }
   }
 }
+
+export { WebSocketService };
