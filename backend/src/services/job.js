@@ -70,7 +70,7 @@ class JobService {
           longitude: jobData.longitude,
           address: jobData.address,
           type: "QUICK_BOOK",
-          status: "PENDING",
+          status: "BROADCASTED",
           estimatedPrice,
           arrivalWindow: jobData.arrivalWindow,
           quickBookDeadline,

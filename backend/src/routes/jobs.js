@@ -53,9 +53,9 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
-router.get('/test', (req, res) => {
-  console.log('🧪 Test route hit!');
-  res.json({ message: 'Jobs route is working!' });
+router.get("/test", (req, res) => {
+  console.log("🧪 Test route hit!");
+  res.json({ message: "Jobs route is working!" });
 });
 
 // Get available jobs for provider (within radius) - UPDATED VERSION
@@ -300,9 +300,13 @@ router.post(
       res.json(result);
     } catch (error) {
       console.error("Error accepting job:", error);
-      if (error.message === "Job already taken") {
+      if (
+        error.message === "Job already taken" ||
+        error.message === "Job is no longer available"
+      ) {
         return res.status(409).json({ error: "Job already taken" });
       }
+
       res.status(500).json({ error: "Failed to accept job" });
     }
   }
@@ -310,13 +314,25 @@ router.post(
 
 // Get jobs for customer
 router.get("/customer", requireAuth, async (req, res) => {
+  const customerId = req.userId;
+
   try {
-    const jobService = new JobService(req.prisma, req.app.get("wsService"));
-    const jobs = await jobService.getCustomerJobs(req.userId);
+    const jobs = await req.prisma.job.findMany({
+      where: { customerId },
+      include: {
+        category: true,
+        provider: true,
+        bids: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
     res.json(jobs);
   } catch (error) {
-    console.error("Error getting customer jobs:", error);
-    res.status(500).json({ error: "Failed to get jobs" });
+    console.error("Error fetching customer jobs:", error);
+    res.status(500).json({ error: "Failed to fetch customer jobs" });
   }
 });
 
@@ -328,24 +344,22 @@ router.get("/provider", requireAuth, async (req, res) => {
     const jobs = await req.prisma.job.findMany({
       where: { providerId: providerId },
       include: {
-        category: true,        // ✅ MAKE SURE THIS IS INCLUDED
+        category: true, // ✅ MAKE SURE THIS IS INCLUDED
         customer: true,
         escrow: true,
         bids: {
           where: { providerId: providerId },
         },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: "desc" },
     });
 
     res.json(jobs);
   } catch (error) {
-    console.error('Error getting provider jobs:', error);
-    res.status(500).json({ error: 'Failed to get jobs' });
+    console.error("Error getting provider jobs:", error);
+    res.status(500).json({ error: "Failed to get jobs" });
   }
 });
-
-
 
 // Get job details
 router.get("/:jobId", async (req, res) => {
@@ -370,14 +384,12 @@ router.post("/:jobId/cancel", requireAuth, async (req, res) => {
 
   try {
     const jobService = new JobService(req.prisma, req.app.get("wsService"));
-    const result = await jobService.cancelJob(jobId, req.userId);
-    res.json(result);
+    await jobService.cancelJob(jobId, req.userId); // assume it succeeds
+    res.json({ success: true });
   } catch (error) {
     console.error("Error canceling job:", error);
     res.status(500).json({ error: "Failed to cancel job" });
   }
 });
-
-
 
 export { router as jobRoutes };

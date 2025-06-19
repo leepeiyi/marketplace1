@@ -8,7 +8,7 @@ import {
   beforeEach,
 } from "@jest/globals";
 import request from "supertest";
-import { TestServer } from "../setup.js";
+import { TestServer } from './setup.js';
 
 describe("User Routes Integration Tests", () => {
   let testServer;

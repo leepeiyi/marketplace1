@@ -1,6 +1,5 @@
 // services/websocket.js
-import { WebSocketServer } from 'ws';
-
+import { WebSocketServer } from "ws";
 
 class WebSocketService {
   constructor() {
@@ -10,28 +9,30 @@ class WebSocketService {
   }
 
   initialize(server) {
-    this.wss = new WebSocketServer({ 
+    this.wss = new WebSocketServer({
       server,
-      path: '/ws'
+      path: "/ws",
     });
 
-    this.wss.on('connection', (ws, request) => {
-      console.log('New WebSocket connection');
+    this.wss.on("connection", (ws, request) => {
+      console.log("New WebSocket connection");
 
-      ws.on('message', (data) => {
+      ws.on("message", (data) => {
         try {
           const message = JSON.parse(data.toString());
           this.handleMessage(ws, message);
         } catch (error) {
-          console.error('Invalid WebSocket message:', error);
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Invalid message format'
-          }));
+          console.error("Invalid WebSocket message:", error);
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Invalid message format",
+            })
+          );
         }
       });
 
-      ws.on('close', () => {
+      ws.on("close", () => {
         // Find and remove the connection
         for (const [userId, connection] of this.connections.entries()) {
           if (connection === ws) {
@@ -43,41 +44,45 @@ class WebSocketService {
         }
       });
 
-      ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
+      ws.on("error", (error) => {
+        console.error("WebSocket error:", error);
       });
 
       // Send welcome message
-      ws.send(JSON.stringify({
-        type: 'connected',
-        message: 'WebSocket connection established'
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "connected",
+          message: "WebSocket connection established",
+        })
+      );
     });
 
-    console.log('WebSocket server initialized');
+    console.log("WebSocket server initialized");
   }
 
   handleMessage(ws, message) {
     switch (message.type) {
-      case 'authenticate':
+      case "authenticate":
         this.authenticateConnection(ws, message);
         break;
-      case 'ping':
-        ws.send(JSON.stringify({ type: 'pong' }));
+      case "ping":
+        ws.send(JSON.stringify({ type: "pong" }));
         break;
       default:
-        console.log('Unknown message type:', message.type);
+        console.log("Unknown message type:", message.type);
     }
   }
 
   authenticateConnection(ws, message) {
     const { userId, userType } = message;
-    
+
     if (!userId || !userType) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Missing userId or userType'
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          message: "Missing userId or userType",
+        })
+      );
       return;
     }
 
@@ -85,11 +90,13 @@ class WebSocketService {
     this.connections.set(userId, ws);
     this.userTypes.set(userId, userType);
 
-    ws.send(JSON.stringify({
-      type: 'authenticated',
-      userId,
-      userType
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "authenticated",
+        userId,
+        userType,
+      })
+    );
 
     console.log(`User ${userId} (${userType}) authenticated`);
   }
@@ -97,15 +104,21 @@ class WebSocketService {
   // Notify a specific customer
   notifyCustomer(customerId, data) {
     const connection = this.connections.get(customerId);
-    if (connection && connection.readyState === 1) { // WebSocket.OPEN
+    if (connection && connection.readyState === 1) {
+      // WebSocket.OPEN
       try {
-        connection.send(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          ...data
-        }));
+        connection.send(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            ...data,
+          })
+        );
         console.log(`Notification sent to customer ${customerId}:`, data.type);
       } catch (error) {
-        console.error(`Error sending notification to customer ${customerId}:`, error);
+        console.error(
+          `Error sending notification to customer ${customerId}:`,
+          error
+        );
         this.connections.delete(customerId);
       }
     } else {
@@ -116,15 +129,21 @@ class WebSocketService {
   // Notify a specific provider
   notifyProvider(providerId, data) {
     const connection = this.connections.get(providerId);
-    if (connection && connection.readyState === 1) { // WebSocket.OPEN
+    if (connection && connection.readyState === 1) {
+      // WebSocket.OPEN
       try {
-        connection.send(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          ...data
-        }));
+        connection.send(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            ...data,
+          })
+        );
         console.log(`Notification sent to provider ${providerId}:`, data.type);
       } catch (error) {
-        console.error(`Error sending notification to provider ${providerId}:`, error);
+        console.error(
+          `Error sending notification to provider ${providerId}:`,
+          error
+        );
         this.connections.delete(providerId);
       }
     } else {
@@ -135,16 +154,18 @@ class WebSocketService {
   // Broadcast to all users of a specific type
   broadcast(userType, data) {
     let sentCount = 0;
-    
+
     for (const [userId, connection] of this.connections.entries()) {
       const connectionUserType = this.userTypes.get(userId);
-      
+
       if (connectionUserType === userType && connection.readyState === 1) {
         try {
-          connection.send(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            ...data
-          }));
+          connection.send(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              ...data,
+            })
+          );
           sentCount++;
         } catch (error) {
           console.error(`Error broadcasting to ${userType} ${userId}:`, error);
@@ -161,14 +182,16 @@ class WebSocketService {
   // Broadcast to all connected users
   broadcastAll(data) {
     let sentCount = 0;
-    
+
     for (const [userId, connection] of this.connections.entries()) {
       if (connection.readyState === 1) {
         try {
-          connection.send(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            ...data
-          }));
+          connection.send(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              ...data,
+            })
+          );
           sentCount++;
         } catch (error) {
           console.error(`Error broadcasting to user ${userId}:`, error);
@@ -184,14 +207,11 @@ class WebSocketService {
 
   // Get connection stats
   getStats() {
-    const customers = Array.from(this.userTypes.values()).filter(type => type === 'customer').length;
-    const providers = Array.from(this.userTypes.values()).filter(type => type === 'provider').length;
-    
     return {
-      totalConnections: this.connections.size,
-      customers,
-      providers,
-      connectedUsers: Array.from(this.connections.keys())
+      totalConnections: this.totalConnections || 0,
+      activeConnections: this.connections
+        ? Object.keys(this.connections).length
+        : 0,
     };
   }
 
@@ -206,7 +226,7 @@ class WebSocketService {
       this.wss.close();
       this.connections.clear();
       this.userTypes.clear();
-      console.log('WebSocket server closed');
+      console.log("WebSocket server closed");
     }
   }
 }

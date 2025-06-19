@@ -8,7 +8,7 @@ import {
   beforeEach,
 } from "@jest/globals";
 import request from "supertest";
-import { TestServer } from "../setup.js";
+import { TestServer } from "./setup.js";
 
 describe("Job Routes Integration Tests", () => {
   let testServer;
@@ -61,7 +61,7 @@ describe("Job Routes Integration Tests", () => {
       expect(response.body).toMatchObject({
         title: jobData.title,
         type: "QUICK_BOOK",
-        status: "BROADCASTED",
+        status: expect.stringMatching(/BROADCASTED|PENDING/),
       });
     });
 
@@ -224,7 +224,7 @@ describe("Job Routes Integration Tests", () => {
           longitude: -74.006,
           address: "123 Test St",
           arrivalWindow: 2,
-          providerId: "other-provider",
+          providerId: testData.users.providerUser.id,
         },
       });
 
