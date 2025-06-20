@@ -43,20 +43,34 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
-  const addNotification = useCallback((notification: Notification) => {
-    setNotifications((prev) => [notification, ...prev].slice(0, 10)); // Keep only last 10
-
-    // Auto-remove after 5 seconds for success/info notifications
-    if (notification.type === "success" || notification.type === "info") {
-      setTimeout(() => {
-        removeNotification(notification.id);
-      }, 5000);
-    }
-  }, []);
-
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
+
+  const addNotification = useCallback(
+    (notification: Notification) => {
+      setNotifications((prev) => {
+        const normalize = (text: string) =>
+          text.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+        const alreadyExists = prev.some(
+          (n) =>
+            normalize(n.title) === normalize(notification.title) &&
+            normalize(n.message) === normalize(notification.message)
+        );
+
+        if (alreadyExists) return prev; // 🛑 Skip duplicate
+        return [notification, ...prev].slice(0, 10); // ✅ Keep only last 10
+      });
+
+      if (notification.type === "success" || notification.type === "info") {
+        setTimeout(() => {
+          removeNotification(notification.id);
+        }, 10000);
+      }
+    },
+    [removeNotification]
+  );
 
   const clearNotifications = useCallback(() => {
     setNotifications([]);

@@ -796,6 +796,9 @@ video {
 .max-w-xs {
   max-width: 20rem;
 }
+.max-w-lg {
+  max-width: 32rem;
+}
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -1436,6 +1439,9 @@ video {
   --tw-text-opacity: 1;
   color: rgb(133 77 14 / var(--tw-text-opacity, 1));
 }
+.accent-blue-600 {
+  accent-color: #2563eb;
+}
 .opacity-25 {
   opacity: 0.25;
 }
@@ -1561,6 +1567,10 @@ video {
 .hover\:text-gray-700:hover {
   --tw-text-opacity: 1;
   color: rgb(55 65 81 / var(--tw-text-opacity, 1));
+}
+
+.hover\:underline:hover {
+  text-decoration-line: underline;
 }
 
 .hover\:shadow-md:hover {

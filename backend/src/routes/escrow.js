@@ -89,4 +89,70 @@ router.post('/:escrowId/release', async (req, res) => {
   }
 });
 
+// Create escrow hold when customer accepts bid
+router.post('/hold', async (req, res) => {
+  const { jobId, bidId, amount } = req.body;
+  const userId = req.headers['x-user-id'];
+
+  if (!userId) {
+    return res.status(401).json({ error: 'User ID required' });
+  }
+
+  if (!jobId || !bidId || !amount) {
+    return res.status(400).json({ error: 'Missing jobId, bidId, or amount' });
+  }
+
+  try {
+    // Check job and bid validity
+    const job = await req.prisma.job.findUnique({ where: { id: jobId } });
+    const bid = await req.prisma.bid.findUnique({ where: { id: bidId } });
+
+    if (!job || !bid || job.customerId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized or invalid job/bid' });
+    }
+
+    // Prevent multiple escrow holds
+    const existing = await req.prisma.escrow.findUnique({ where: { jobId } });
+    if (existing) {
+      return res.status(409).json({ error: 'Escrow already created' });
+    }
+
+    const escrow = await req.prisma.escrow.create({
+      data: {
+        jobId,
+        customerId: userId,
+        providerId: bid.providerId,
+        bidId,
+        amount,
+        status: 'HELD',
+        heldAt: new Date()
+      }
+    });
+
+    // Mark job as BOOKED
+    await req.prisma.job.update({
+      where: { id: jobId },
+      data: { status: 'BOOKED' }
+    });
+
+    // Notify provider via WebSocket
+    const wsService = req.app.get('wsService');
+    wsService.notifyProvider(bid.providerId, {
+      type: 'job_accepted',
+      job: {
+        id: job.id,
+        title: job.title,
+        providerName: bid.providerName || 'Customer',
+        amount
+      }
+    });
+
+    res.json({ escrow });
+  } catch (error) {
+    console.error('Error creating escrow hold:', error);
+    res.status(500).json({ error: 'Failed to create escrow hold' });
+  }
+});
+
+
 export { router as escrowRoutes };

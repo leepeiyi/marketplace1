@@ -232,7 +232,61 @@ router.get("/available", requireAuth, async (req, res) => {
       `📊 Returning: ${quickBookJobs} Quick Book, ${postQuoteJobs} Post Quote jobs`
     );
 
-    res.json(formattedJobs);
+    // Split jobs into two groups
+    const available = [];
+    const alreadyBidJobs = [];
+
+    for (const job of jobs) {
+      const hasPendingBid = job.bids.some((bid) => bid.status === "PENDING");
+
+      // Calculate distance (fake for demo)
+      const distance = Math.round(Math.random() * 15) + 1;
+
+      // QuickBook deadline
+      let quickBookDeadline = null;
+      if (job.type === "QUICK_BOOK" && job.arrivalWindow) {
+        const deadline = new Date(job.createdAt);
+        deadline.setHours(deadline.getHours() + job.arrivalWindow);
+        quickBookDeadline = deadline.toISOString();
+      }
+
+      const formattedJob = {
+        id: job.id,
+        title: job.title,
+        description: job.description,
+        type: job.type,
+        status: job.status,
+        estimatedPrice: job.estimatedPrice,
+        acceptPrice: job.acceptPrice,
+        arrivalWindow: job.arrivalWindow,
+        distance,
+        createdAt: job.createdAt,
+        biddingEndsAt: job.biddingEndsAt,
+        quickBookDeadline,
+        category: job.category,
+        customer: job.customer,
+        address: job.address,
+        latitude: job.latitude,
+        longitude: job.longitude,
+        hasUserBid: hasPendingBid,
+      };
+
+      if (job.type === "POST_QUOTE" && hasPendingBid) {
+        alreadyBidJobs.push(formattedJob);
+      } else {
+        available.push(formattedJob);
+      }
+    }
+
+    console.log(
+      `📊 Returning: ${available.length} available, ${alreadyBidJobs.length} already bid`
+    );
+
+    // Send both groups
+    res.json({
+      available: available,
+      alreadyBid: alreadyBidJobs,
+    });
   } catch (error) {
     console.error("❌ Error getting available jobs:", error);
     res.status(500).json({ error: "Failed to get available jobs" });

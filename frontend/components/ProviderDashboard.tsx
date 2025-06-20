@@ -59,6 +59,7 @@ export function ProviderDashboard() {
   const [bidNote, setBidNote] = useState("");
   const [bidEta, setBidEta] = useState(60);
   const [isSubmittingBid, setIsSubmittingBid] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
   // Listen for WebSocket job notifications
   useEffect(() => {
@@ -177,19 +178,18 @@ export function ProviderDashboard() {
   const loadAvailableJobs = async () => {
     try {
       const response = await fetch(`${API_URL}/api/jobs/available`, {
-        headers: {
-          "x-user-id": user?.id || "",
-        },
+        headers: { "x-user-id": user?.id || "" },
       });
 
       if (response.ok) {
-        const jobs = await response.json();
+        const { available, alreadyBid } = await response.json();
 
-        // Separate quick book and post quote jobs
         const quickJobs: QuickBookJob[] = [];
         const quoteJobs: PostQuoteJob[] = [];
 
-        for (const job of jobs) {
+        const allJobs = [...available, ...alreadyBid];
+
+        for (const job of allJobs) {
           if (job.type === "QUICK_BOOK") {
             quickJobs.push({
               id: job.id,
@@ -203,31 +203,6 @@ export function ProviderDashboard() {
               receivedAt: Date.now(),
             });
           } else if (job.type === "POST_QUOTE") {
-            // Check if user already bid on this job
-            let hasUserBid = false;
-            let bidsCount = 0;
-
-            try {
-              const bidsResponse = await fetch(
-                `${API_URL}/api/bids/job/${job.id}`,
-                {
-                  headers: {
-                    "x-user-id": user?.id || "",
-                  },
-                }
-              );
-
-              if (bidsResponse.ok) {
-                const bids = await bidsResponse.json();
-                bidsCount = bids.length;
-                hasUserBid = bids.some(
-                  (bid: any) => bid.providerId === user?.id
-                );
-              }
-            } catch (error) {
-              console.error("Error checking bids:", error);
-            }
-
             quoteJobs.push({
               id: job.id,
               title: job.title,
@@ -244,8 +219,8 @@ export function ProviderDashboard() {
               distance: job.distance,
               createdAt: job.createdAt,
               biddingEndsAt: job.biddingEndsAt,
-              bidsCount,
-              hasUserBid,
+              bidsCount: job.bidsCount || 0,
+              hasUserBid: job.hasUserBid || false,
             });
           }
         }
@@ -379,19 +354,6 @@ export function ProviderDashboard() {
       if (response.ok) {
         const result = await response.json();
 
-        // Update the job to show user has bid
-        setPostQuoteJobs((prev) =>
-          prev.map((job) =>
-            job.id === selectedJob.id
-              ? {
-                  ...job,
-                  hasUserBid: true,
-                  bidsCount: (job.bidsCount || 0) + 1,
-                }
-              : job
-          )
-        );
-
         addNotification({
           id: Date.now().toString(),
           type: "success",
@@ -402,7 +364,6 @@ export function ProviderDashboard() {
 
         setShowBidModal(false);
 
-        // Check if auto-hired
         if (result.autoHired) {
           setPostQuoteJobs((prev) =>
             prev.filter((job) => job.id !== selectedJob.id)
@@ -419,7 +380,11 @@ export function ProviderDashboard() {
         }
       } else {
         const error = await response.json();
-        throw new Error(error.error || "Failed to submit bid");
+        const statusMsg = `HTTP ${response.status}: ${
+          error.error || "Failed to submit bid"
+        }`;
+
+        throw new Error(statusMsg);
       }
     } catch (error) {
       addNotification({
@@ -576,15 +541,62 @@ export function ProviderDashboard() {
                       No bidding opportunities available
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {postQuoteJobs.map((job) => (
-                        <PostQuoteJobCard
-                          key={job.id}
-                          job={job}
-                          onBid={openBidModal}
-                          formatTimeAgo={formatTimeAgo}
+                    <div className="space-y-6">
+                      {/* Demo Mode Toggle */}
+                      <div className="mb-4 flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          id="demo-mode"
+                          checked={demoMode}
+                          onChange={(e) => setDemoMode(e.target.checked)}
+                          className="accent-blue-600"
                         />
-                      ))}
+                        <label htmlFor="demo-mode" className="text-gray-700">
+                          Demo Mode: Allow bidding again on already-bid jobs
+                        </label>
+                      </div>
+
+                      {/* Show available to bid */}
+                      {postQuoteJobs.filter((j) => !j.hasUserBid).length ===
+                      0 ? (
+                        <p className="text-gray-500 text-sm">
+                          No new jobs available to bid.
+                        </p>
+                      ) : (
+                        postQuoteJobs
+                          .filter((j) => !j.hasUserBid)
+                          .map((job) => (
+                            <PostQuoteJobCard
+                              key={job.id}
+                              job={job}
+                              onBid={openBidModal}
+                              formatTimeAgo={formatTimeAgo}
+                              demoMode={demoMode}
+                            />
+                          ))
+                      )}
+
+                      {/* Show already bid */}
+                      {postQuoteJobs.some((j) => j.hasUserBid) && (
+                        <div className="mt-6 border-t pt-4">
+                          <h4 className="text-sm font-semibold text-gray-600 mb-2">
+                            Already Bid
+                          </h4>
+                          <div className="space-y-4">
+                            {postQuoteJobs
+                              .filter((j) => j.hasUserBid)
+                              .map((job) => (
+                                <PostQuoteJobCard
+                                  key={job.id}
+                                  job={job}
+                                  onBid={openBidModal}
+                                  formatTimeAgo={formatTimeAgo}
+                                  demoMode={demoMode}
+                                />
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -915,10 +927,12 @@ function PostQuoteJobCard({
   job,
   onBid,
   formatTimeAgo,
+  demoMode = false,
 }: {
   job: PostQuoteJob;
   onBid: (job: PostQuoteJob) => void;
   formatTimeAgo: (dateString: string) => string;
+  demoMode?: boolean;
 }) {
   return (
     <div className="border rounded-lg p-4 bg-orange-50 border-orange-200">
@@ -967,7 +981,7 @@ function PostQuoteJobCard({
 
       {/* Action Button */}
       <div>
-        {job.hasUserBid ? (
+        {job.hasUserBid && !demoMode ? (
           <button
             disabled
             className="w-full bg-gray-300 text-gray-500 px-4 py-2 rounded-md cursor-not-allowed font-medium"

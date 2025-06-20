@@ -105,9 +105,11 @@ async function main() {
   for (let i = 1; i <= 30; i++) {
     const isFixedTierA = i <= 3;
 
-    // Use Orchard for Provider 1-3, else pick random area
+    // Use for Provider 1-3, else pick random area
+    const tierACenter = { lat: 1.3338, lon: 103.8701 };
+
     const area = isFixedTierA
-      ? singaporeAreas[0] // Orchard
+      ? tierACenter
       : singaporeAreas[i % singaporeAreas.length];
 
     // Set Tier A criteria for first 3 providers

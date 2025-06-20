@@ -12,7 +12,7 @@ export function NotificationToast() {
       {notifications.map((notification) => (
         <div
           key={notification.id}
-          className={`max-w-sm w-full shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden animate-slide-up ${
+          className={`max-w-lg w-full shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden animate-slide-up ${
             notification.type === 'success' ? 'bg-success-50' :
             notification.type === 'error' ? 'bg-error-50' :
             notification.type === 'warning' ? 'bg-warning-50' :
