@@ -670,6 +670,22 @@ class JobService {
       });
     }
 
+    // ✅ Decrease provider reliability if provider cancelled
+    if (cancelStatus === "CANCELLED_BY_PROVIDER") {
+      try {
+        await this.prisma.provider.update({
+          where: { userId },
+          data: {
+            reliabilityScore: {
+              decrement: 5,
+            },
+          },
+        });
+      } catch (err) {
+        console.warn("⚠️ Failed to decrement reliability:", err.message);
+      }
+    }
+
     // Notify relevant parties
     if (job.providerId && job.providerId !== userId) {
       this.wsService.notifyProvider(job.providerId, {

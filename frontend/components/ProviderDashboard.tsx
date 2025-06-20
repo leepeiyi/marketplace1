@@ -249,6 +249,40 @@ export function ProviderDashboard() {
       console.error("Error loading my jobs:", error);
     }
   };
+  const cancelJob = async (jobId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}/cancel`, {
+        method: "POST",
+        headers: {
+          "x-user-id": user?.id || "",
+        },
+      });
+
+      if (response.ok) {
+        addNotification({
+          id: Date.now().toString(),
+          type: "warning",
+          title: "Job Cancelled",
+          message: "You cancelled this job. Escrow refunded.",
+          timestamp: new Date(),
+        });
+
+        loadMyJobs(); // Refresh job list
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to cancel job");
+      }
+    } catch (err) {
+      console.error("❌ Cancel error:", err);
+      addNotification({
+        id: Date.now().toString(),
+        type: "error",
+        title: "Cancel Failed",
+        message: (err as Error).message,
+        timestamp: new Date(),
+      });
+    }
+  };
 
   const acceptQuickBookJob = async (jobId: string) => {
     setIsLoading(true);
@@ -646,6 +680,16 @@ export function ProviderDashboard() {
                             >
                               {job.status}
                             </div>
+
+                            {/* Move this OUTSIDE the badge */}
+                            {job.status === "BOOKED" && (
+                              <button
+                                onClick={() => cancelJob(job.id)}
+                                className="mt-1 text-xs text-red-600 hover:underline"
+                              >
+                                Cancel Job
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
