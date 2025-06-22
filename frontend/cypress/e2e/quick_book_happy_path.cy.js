@@ -10,10 +10,10 @@ describe("Quick Book Happy Path", () => {
       method: "POST",
       url: `${apiUrl}/api/jobs/quick-book`,
       headers: {
-        "x-user-id": "cmc7oe1jl000a4riehq4zhmq4", // Replace with a valid test customer ID
+        "x-user-id": "cmc7uqb9j000asozpa381palg", // Replace with a valid test customer ID
       },
       body: {
-        categoryId: "cmc7oe1j800014riewjs93i69",
+        categoryId: "cmc7uqb8n0001sozpkzp7ps7v",
         title: "Fix leaking pipe",
         description: "Kitchen sink leaking under cabinet",
         latitude: 1.3521,
@@ -32,8 +32,8 @@ describe("Quick Book Happy Path", () => {
           win.localStorage.setItem(
             "quickly_user", // ✅ match your actual key
             JSON.stringify({
-              id: "cmc7oe1k9000k4rieepx2hf2p",
-              name: "Provider 1",
+              id: "cmc7uqbai000ksozpw9hmjye2",
+              name: "Expert Pro Services (Tier A)",
               email: "provider1@quickly.com",
               role: "PROVIDER",
             })

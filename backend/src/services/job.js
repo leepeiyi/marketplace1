@@ -157,6 +157,8 @@ class JobService {
 
   // Enhanced section of services/job.js - acceptQuickBookJob method with better concurrency handling
 
+  // Enhanced acceptQuickBookJob method in services/job.js
+  // Update this method in services/job.js
   async acceptQuickBookJob(jobId, providerId) {
     try {
       console.log(
@@ -165,6 +167,22 @@ class JobService {
 
       // **ENHANCED: Use transaction for atomic check-and-update**
       const result = await this.prisma.$transaction(async (prisma) => {
+        // 🚨 NEW: Check if provider already has an active job
+        const existingActiveJob = await prisma.job.findFirst({
+          where: {
+            providerId: providerId,
+            status: {
+              in: ["BOOKED", "IN_PROGRESS"], // Provider has active work
+            },
+          },
+        });
+
+        if (existingActiveJob) {
+          throw new Error(
+            "You already have an active job. Complete it before accepting another."
+          );
+        }
+
         // Check job availability within transaction
         const job = await prisma.job.findUnique({
           where: { id: jobId },
@@ -238,6 +256,14 @@ class JobService {
         if (updatedJob.count === 0) {
           throw new Error("Job already taken");
         }
+
+        // 🚨 NEW: Set provider as busy/unavailable for new jobs
+        await prisma.provider.update({
+          where: { userId: providerId },
+          data: {
+            isAvailable: false, // Provider is now busy with this job
+          },
+        });
 
         // Get the updated job
         const finalJob = await prisma.job.findUnique({
@@ -317,6 +343,75 @@ class JobService {
       };
     } catch (error) {
       console.error("Error accepting job:", error);
+      throw error;
+    }
+  }
+  // Add this method to your JobService class in services/job.js
+  async completeJob(jobId, providerId) {
+    try {
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Verify job exists and provider owns it
+        const job = await prisma.job.findUnique({
+          where: { id: jobId },
+          include: { escrow: true },
+        });
+
+        if (!job) {
+          throw new Error("Job not found");
+        }
+
+        if (job.providerId !== providerId) {
+          throw new Error("Unauthorized - not your job");
+        }
+
+        if (job.status !== "BOOKED" && job.status !== "IN_PROGRESS") {
+          throw new Error("Job cannot be completed");
+        }
+
+        // Update job status
+        const updatedJob = await prisma.job.update({
+          where: { id: jobId },
+          data: {
+            status: "COMPLETED",
+            completedAt: new Date(),
+          },
+        });
+
+        // 🚨 Make provider available again
+        await prisma.provider.update({
+          where: { userId: providerId },
+          data: {
+            isAvailable: true, // Provider is now available for new jobs
+            completedJobs: {
+              increment: 1,
+            },
+          },
+        });
+
+        // Release escrow payment
+        if (job.escrow && job.escrow.status === "HELD") {
+          await prisma.escrow.update({
+            where: { id: job.escrow.id },
+            data: {
+              status: "RELEASED",
+              releasedAt: new Date(),
+            },
+          });
+        }
+
+        return updatedJob;
+      });
+
+      // Notify customer of completion
+      this.wsService.notifyCustomer(result.customerId, {
+        type: "job_completed",
+        jobId: result.id,
+        message: "Your job has been completed!",
+      });
+
+      return result;
+    } catch (error) {
+      console.error("Error completing job:", error);
       throw error;
     }
   }
@@ -629,6 +724,7 @@ class JobService {
     });
   }
 
+  // Update this method in services/job.js
   async cancelJob(jobId, userId) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
@@ -653,11 +749,40 @@ class JobService {
         ? "CANCELLED_BY_CUSTOMER"
         : "CANCELLED_BY_PROVIDER";
 
-    const updatedJob = await this.prisma.job.update({
-      where: { id: jobId },
-      data: {
-        status: cancelStatus,
-      },
+    // Use transaction to update job and provider availability
+    const updatedJob = await this.prisma.$transaction(async (prisma) => {
+      // Update job status
+      const jobUpdate = await prisma.job.update({
+        where: { id: jobId },
+        data: {
+          status: cancelStatus,
+        },
+      });
+
+      // 🚨 NEW: If provider cancels, make them available again
+      if (job.providerId && cancelStatus === "CANCELLED_BY_PROVIDER") {
+        await prisma.provider.update({
+          where: { userId: job.providerId },
+          data: {
+            isAvailable: true, // Provider is now available for new jobs
+            reliabilityScore: {
+              decrement: 5, // Penalize for cancelling
+            },
+          },
+        });
+      }
+
+      // 🚨 NEW: If customer cancels and provider was assigned, free up the provider
+      if (job.providerId && cancelStatus === "CANCELLED_BY_CUSTOMER") {
+        await prisma.provider.update({
+          where: { userId: job.providerId },
+          data: {
+            isAvailable: true, // Provider is now available for new jobs
+          },
+        });
+      }
+
+      return jobUpdate;
     });
 
     // Handle escrow refund if exists
@@ -668,22 +793,6 @@ class JobService {
           status: "REFUNDED",
         },
       });
-    }
-
-    // ✅ Decrease provider reliability if provider cancelled
-    if (cancelStatus === "CANCELLED_BY_PROVIDER") {
-      try {
-        await this.prisma.provider.update({
-          where: { userId },
-          data: {
-            reliabilityScore: {
-              decrement: 5,
-            },
-          },
-        });
-      } catch (err) {
-        console.warn("⚠️ Failed to decrement reliability:", err.message);
-      }
     }
 
     // Notify relevant parties
@@ -704,6 +813,74 @@ class JobService {
     }
 
     return updatedJob;
+  }
+  async completeJob(jobId, providerId) {
+    try {
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Verify job exists and provider owns it
+        const job = await prisma.job.findUnique({
+          where: { id: jobId },
+          include: { escrow: true },
+        });
+
+        if (!job) {
+          throw new Error("Job not found");
+        }
+
+        if (job.providerId !== providerId) {
+          throw new Error("Unauthorized - not your job");
+        }
+
+        if (job.status !== "BOOKED" && job.status !== "IN_PROGRESS") {
+          throw new Error("Job cannot be completed");
+        }
+
+        // Update job status
+        const updatedJob = await prisma.job.update({
+          where: { id: jobId },
+          data: {
+            status: "COMPLETED",
+            completedAt: new Date(),
+          },
+        });
+
+        // 🚨 Make provider available again
+        await prisma.provider.update({
+          where: { userId: providerId },
+          data: {
+            isAvailable: true, // Provider is now available for new jobs
+            completedJobs: {
+              increment: 1,
+            },
+          },
+        });
+
+        // Release escrow payment
+        if (job.escrow && job.escrow.status === "HELD") {
+          await prisma.escrow.update({
+            where: { id: job.escrow.id },
+            data: {
+              status: "RELEASED",
+              releasedAt: new Date(),
+            },
+          });
+        }
+
+        return updatedJob;
+      });
+
+      // Notify customer of completion
+      this.wsService.notifyCustomer(result.customerId, {
+        type: "job_completed",
+        jobId: result.id,
+        message: "Your job has been completed!",
+      });
+
+      return result;
+    } catch (error) {
+      console.error("Error completing job:", error);
+      throw error;
+    }
   }
 
   // Distance calculation (Haversine formula)

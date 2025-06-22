@@ -218,7 +218,6 @@ router.get("/available", requireAuth, async (req, res) => {
         address: job.address,
         latitude: job.latitude,
         longitude: job.longitude,
-        
       };
     });
 
@@ -270,7 +269,9 @@ router.get("/available", requireAuth, async (req, res) => {
         latitude: job.latitude,
         longitude: job.longitude,
         hasUserBid: hasPendingBid,
-        bidId: hasPendingBid ? job.bids.find((b) => b.status === "PENDING")?.id : null,
+        bidId: hasPendingBid
+          ? job.bids.find((b) => b.status === "PENDING")?.id
+          : null,
       };
 
       if (job.type === "POST_QUOTE" && hasPendingBid) {
@@ -344,6 +345,8 @@ router.post(
 );
 
 // Provider accepts quick book job
+// Update your accept route in jobs.js to handle the new error properly:
+
 router.post(
   "/accept",
   requireAuth,
@@ -363,16 +366,25 @@ router.post(
           {
             type: "job_taken",
             jobId: result.job.id,
-            jobTitle: result.job.title, // ✅ ADD THIS
-            providerName: result.provider?.name || "A provider", // ✅ ADD THIS
+            jobTitle: result.job.title,
+            providerName: result.provider?.name || "A provider",
           },
           [req.userId]
-        ); // ✅ Exclude the one who accepted
+        );
       }
 
       res.json(result);
     } catch (error) {
       console.error("Error accepting job:", error);
+
+      // 🚨 NEW: Handle single job limitation error
+      if (
+        error.message ===
+        "You already have an active job. Complete it before accepting another."
+      ) {
+        return res.status(400).json({ error: error.message });
+      }
+
       if (
         error.message === "Job already taken" ||
         error.message === "Job is no longer available"
@@ -462,6 +474,23 @@ router.post("/:jobId/cancel", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Error canceling job:", error);
     res.status(500).json({ error: "Failed to cancel job" });
+  }
+});
+
+router.post("/:jobId/complete", requireAuth, async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const jobService = new JobService(req.prisma, req.app.get("wsService"));
+    const result = await jobService.completeJob(jobId, req.userId);
+    res.json({
+      success: true,
+      job: result,
+      message: "Job completed successfully",
+    });
+  } catch (error) {
+    console.error("Error completing job:", error);
+    res.status(500).json({ error: error.message || "Failed to complete job" });
   }
 });
 

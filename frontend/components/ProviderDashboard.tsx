@@ -63,6 +63,8 @@ export function ProviderDashboard() {
   const [bidEta, setBidEta] = useState(60);
   const [isSubmittingBid, setIsSubmittingBid] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  // 🚨 NEW: Track if provider has active job
+  const [hasActiveJob, setHasActiveJob] = useState(false);
 
   // Listen for WebSocket job notifications
   useEffect(() => {
@@ -170,16 +172,31 @@ export function ProviderDashboard() {
     };
   }, [addNotification]);
 
-  // Load existing jobs on mount
+  // Load existing jobs on mount AND when availability changes
   useEffect(() => {
-    if (user && isAvailable) {
+    if (user) {
       loadAvailableJobs();
       loadMyJobs();
     }
-  }, [user, isAvailable]);
+  }, [user, isAvailable]); // Remove isAvailable dependency for loadAvailableJobs
+
+  // 🚨 NEW: Check if provider has active jobs (only BOOKED and IN_PROGRESS)
+  useEffect(() => {
+    const activeJobs = myJobs.filter(job => 
+      job.status === "BOOKED" || job.status === "IN_PROGRESS"
+    );
+    setHasActiveJob(activeJobs.length > 0);
+  }, [myJobs]);
 
   const loadAvailableJobs = async () => {
     try {
+      // Only load available jobs if provider is available
+      if (!isAvailable) {
+        setQuickBookJobs([]);
+        setPostQuoteJobs([]);
+        return;
+      }
+
       const response = await fetch(`${API_URL}/api/jobs/available`, {
         headers: { "x-user-id": user?.id || "" },
       });
@@ -249,12 +266,54 @@ export function ProviderDashboard() {
 
       if (response.ok) {
         const jobs = await response.json();
+        console.log("📋 Loaded provider jobs:", jobs); // Debug log
+        console.log("📊 Job statuses:", jobs.map((job: any) => ({ id: job.id, status: job.status, title: job.title })));
         setMyJobs(jobs);
+      } else {
+        console.error("❌ Failed to load jobs:", response.status);
       }
     } catch (error) {
       console.error("Error loading my jobs:", error);
     }
   };
+
+  // 🚨 NEW: Complete job function
+  const completeJob = async (jobId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}/complete`, {
+        method: "POST",
+        headers: {
+          "x-user-id": user?.id || "",
+        },
+      });
+
+      if (response.ok) {
+        addNotification({
+          id: Date.now().toString(),
+          type: "success",
+          title: "Job Completed",
+          message: "Job completed successfully! You are now available for new jobs.",
+          timestamp: new Date(),
+        });
+
+        loadMyJobs(); // Refresh job list
+        loadAvailableJobs(); // Refresh available jobs since provider is now available
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to complete job");
+      }
+    } catch (err) {
+      console.error("❌ Complete error:", err);
+      addNotification({
+        id: Date.now().toString(),
+        type: "error",
+        title: "Complete Failed",
+        message: (err as Error).message,
+        timestamp: new Date(),
+      });
+    }
+  };
+
   const cancelJob = async (jobId: string) => {
     try {
       const response = await fetch(`${API_URL}/api/jobs/${jobId}/cancel`, {
@@ -269,11 +328,12 @@ export function ProviderDashboard() {
           id: Date.now().toString(),
           type: "warning",
           title: "Job Cancelled",
-          message: "You cancelled this job. Escrow refunded.",
+          message: "You cancelled this job. You are now available for new jobs.",
           timestamp: new Date(),
         });
 
         loadMyJobs(); // Refresh job list
+        loadAvailableJobs(); // Refresh available jobs since provider is now available
       } else {
         const error = await response.json();
         throw new Error(error.error || "Failed to cancel job");
@@ -330,6 +390,16 @@ export function ProviderDashboard() {
           type: "warning",
           title: "Job Already Taken",
           message: "Another provider accepted this job first",
+          timestamp: new Date(),
+        });
+      } else if (response.status === 400) {
+        // 🚨 NEW: Provider already has active job or other validation error
+        const error = await response.json();
+        addNotification({
+          id: Date.now().toString(),
+          type: "warning", 
+          title: "Cannot Accept Job",
+          message: error.error || "You already have an active job. Complete your current job first.",
           timestamp: new Date(),
         });
       } else {
@@ -468,8 +538,17 @@ export function ProviderDashboard() {
                 Provider Dashboard
               </div>
             </div>
+            {/* 🚨 NEW: Status indicator in header */}
             <div className="flex items-center space-x-4">
-              <span className="text-gray-700">Hello, {user?.name}</span>
+              <div className="flex items-center space-x-2">
+                {hasActiveJob && (
+                  <div className="flex items-center space-x-1 bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                    <span>Active Job</span>
+                  </div>
+                )}
+                <span className="text-gray-700">Hello, {user?.name}</span>
+              </div>
               <button
                 onClick={logout}
                 className="px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
@@ -483,7 +562,7 @@ export function ProviderDashboard() {
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
-          {/* Availability Toggle */}
+          {/* 🚨 UPDATED: Availability Toggle */}
           <div className="bg-white shadow rounded-lg p-6 mb-6">
             <div className="flex items-center justify-between">
               <div>
@@ -491,37 +570,94 @@ export function ProviderDashboard() {
                   Availability Status
                 </h3>
                 <p className="text-gray-600">
-                  Toggle your availability to receive job notifications
+                  {hasActiveJob 
+                    ? "Complete your current job to become available for new ones"
+                    : "Toggle your availability to receive job notifications"
+                  }
                 </p>
+                {hasActiveJob && (
+                  <p className="text-sm text-orange-600 mt-1">
+                    ⚠️ You have an active job. Complete it before accepting new jobs.
+                  </p>
+                )}
               </div>
               <label className="flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={isAvailable}
-                  onChange={(e) => setIsAvailable(e.target.checked)}
+                  checked={isAvailable && !hasActiveJob}
+                  onChange={(e) => {
+                    if (hasActiveJob) {
+                      addNotification({
+                        id: Date.now().toString(),
+                        type: "warning",
+                        title: "Cannot Change Availability",
+                        message: "Complete your active job first",
+                        timestamp: new Date(),
+                      });
+                      return;
+                    }
+                    setIsAvailable(e.target.checked);
+                  }}
                   className="sr-only"
+                  disabled={hasActiveJob}
                 />
                 <div
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isAvailable ? "bg-blue-600" : "bg-gray-200"
-                  }`}
+                    isAvailable && !hasActiveJob ? "bg-blue-600" : "bg-gray-200"
+                  } ${hasActiveJob ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isAvailable ? "translate-x-6" : "translate-x-1"
+                      isAvailable && !hasActiveJob ? "translate-x-6" : "translate-x-1"
                     }`}
                   />
                 </div>
                 <span
                   className={`ml-3 text-sm font-medium ${
-                    isAvailable ? "text-green-600" : "text-gray-500"
+                    hasActiveJob 
+                      ? "text-orange-600" 
+                      : isAvailable 
+                        ? "text-green-600" 
+                        : "text-gray-500"
                   }`}
                 >
-                  {isAvailable ? "Available" : "Unavailable"}
+                  {hasActiveJob 
+                    ? "Busy" 
+                    : isAvailable 
+                      ? "Available" 
+                      : "Unavailable"
+                  }
                 </span>
               </label>
             </div>
           </div>
+
+          {/* 🚨 NEW: Status Summary */}
+          {hasActiveJob && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                    <span className="text-orange-600 text-sm">🔧</span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-orange-900">
+                    You're currently working on a job
+                  </h4>
+                  <p className="text-sm text-orange-700 mt-1">
+                    Complete your current job to become available for new opportunities. 
+                    You can only work on one job at a time to ensure quality service.
+                  </p>
+                  <div className="mt-2">
+                    <span className="text-xs text-orange-600">
+                      Active jobs: {myJobs.filter(j => j.status === "BOOKED" || j.status === "IN_PROGRESS").length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Available Jobs */}
@@ -554,6 +690,7 @@ export function ProviderDashboard() {
                 </div>
 
                 <div className="p-6">
+                  {/* 🚨 UPDATED: Job visibility logic - Always show jobs when available */}
                   {!isAvailable ? (
                     <div className="text-gray-500 text-center py-8">
                       Set yourself as available to see jobs
@@ -565,6 +702,17 @@ export function ProviderDashboard() {
                       </div>
                     ) : (
                       <div className="space-y-4">
+                        {/* Show warning if provider has active job */}
+                        {hasActiveJob && (
+                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                            <div className="flex items-center space-x-2 text-sm">
+                              <span className="text-orange-600">⚠️</span>
+                              <span className="text-orange-700">
+                                You have an active job. Complete it before accepting new Quick Book jobs.
+                              </span>
+                            </div>
+                          </div>
+                        )}
                         {quickBookJobs.map((job) => (
                           <QuickBookJobCard
                             key={job.id}
@@ -572,6 +720,7 @@ export function ProviderDashboard() {
                             onAccept={acceptQuickBookJob}
                             onDecline={declineQuickBookJob}
                             isLoading={isLoading}
+                            hasActiveJob={hasActiveJob}
                           />
                         ))}
                       </div>
@@ -596,6 +745,18 @@ export function ProviderDashboard() {
                         </label>
                       </div>
 
+                      {/* Show warning if provider has active job */}
+                      {hasActiveJob && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                          <div className="flex items-center space-x-2 text-sm">
+                            <span className="text-orange-600">⚠️</span>
+                            <span className="text-orange-700">
+                              You have an active job. You can view opportunities but cannot submit new bids until you complete your current job.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Show available to bid */}
                       {postQuoteJobs.filter((j) => !j.hasUserBid).length ===
                       0 ? (
@@ -612,6 +773,7 @@ export function ProviderDashboard() {
                               onBid={openBidModal}
                               formatTimeAgo={formatTimeAgo}
                               demoMode={demoMode}
+                              hasActiveJob={hasActiveJob}
                             />
                           ))
                       )}
@@ -632,6 +794,7 @@ export function ProviderDashboard() {
                                   onBid={openBidModal}
                                   formatTimeAgo={formatTimeAgo}
                                   demoMode={demoMode}
+                                  hasActiveJob={hasActiveJob}
                                 />
                               ))}
                           </div>
@@ -646,16 +809,37 @@ export function ProviderDashboard() {
             {/* My Jobs */}
             <div className="lg:col-span-1">
               <div className="bg-white shadow rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  My Jobs
-                </h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    My Jobs
+                  </h3>
+                  <div className="text-sm text-gray-500">
+                    <div>{myJobs.filter(j => j.status === "BOOKED" || j.status === "IN_PROGRESS").length} active</div>
+                    <div className="text-xs">
+                      {myJobs.filter(j => j.status === "COMPLETED").length} completed, {" "}
+                      {myJobs.filter(j => j.status?.startsWith("CANCELLED")).length} cancelled
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-4">
                   {myJobs.length === 0 ? (
                     <div className="text-gray-500 text-center py-8">
-                      No active jobs
+                      No jobs yet
                     </div>
                   ) : (
-                    myJobs.map((job) => (
+                    // Sort jobs: active first, then completed, then cancelled
+                    myJobs
+                      .sort((a, b) => {
+                        const priority: Record<string, number> = {
+                          "BOOKED": 1,
+                          "IN_PROGRESS": 2, 
+                          "COMPLETED": 3,
+                          "CANCELLED_BY_PROVIDER": 4,
+                          "CANCELLED_BY_CUSTOMER": 4
+                        };
+                        return (priority[a.status] || 5) - (priority[b.status] || 5);
+                      })
+                      .map((job) => (
                       <div key={job.id} className="border rounded-lg p-4">
                         <div className="flex justify-between items-start">
                           <div>
@@ -681,20 +865,63 @@ export function ProviderDashboard() {
                                   ? "bg-yellow-100 text-yellow-800"
                                   : job.status === "COMPLETED"
                                   ? "bg-green-100 text-green-800"
+                                  : job.status === "CANCELLED_BY_PROVIDER"
+                                  ? "bg-red-100 text-red-800"
+                                  : job.status === "CANCELLED_BY_CUSTOMER"
+                                  ? "bg-gray-100 text-gray-800"
+                                  : job.status?.startsWith("CANCELLED")
+                                  ? "bg-red-100 text-red-800"
                                   : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {job.status}
+                              {job.status === "CANCELLED_BY_PROVIDER" 
+                                ? "CANCELLED (BY YOU)"
+                                : job.status === "CANCELLED_BY_CUSTOMER"
+                                ? "CANCELLED (BY CUSTOMER)" 
+                                : job.status?.startsWith("CANCELLED")
+                                ? "CANCELLED"
+                                : job.status}
                             </div>
 
-                            {/* Move this OUTSIDE the badge */}
+                            {/* 🚨 UPDATED: Action Buttons for Different Job States */}
                             {job.status === "BOOKED" && (
-                              <button
-                                onClick={() => cancelJob(job.id)}
-                                className="mt-1 text-xs text-red-600 hover:underline"
-                              >
-                                Cancel Job
-                              </button>
+                              <div className="mt-2 flex gap-2">
+                                <button
+                                  onClick={() => completeJob(job.id)}
+                                  className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                                >
+                                  Complete Job
+                                </button>
+                                <button
+                                  onClick={() => cancelJob(job.id)}
+                                  className="text-xs text-red-600 hover:underline"
+                                >
+                                  Cancel Job
+                                </button>
+                              </div>
+                            )}
+                            
+                            {job.status === "IN_PROGRESS" && (
+                              <div className="mt-2">
+                                <button
+                                  onClick={() => completeJob(job.id)}
+                                  className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                                >
+                                  Complete Job
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Show additional info for completed/cancelled jobs */}
+                            {(job.status === "COMPLETED" || job.status.startsWith("CANCELLED")) && (
+                              <div className="mt-2 text-xs text-gray-500">
+                                {job.status === "COMPLETED" && job.completedAt && (
+                                  <div>Completed: {new Date(job.completedAt).toLocaleDateString()}</div>
+                                )}
+                                {job.status.startsWith("CANCELLED") && (
+                                  <div>Cancelled: {new Date(job.updatedAt).toLocaleDateString()}</div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -876,17 +1103,19 @@ export function ProviderDashboard() {
   );
 }
 
-// Quick Book Job Card Component with Countdown Timer
+// 🚨 UPDATED: Quick Book Job Card Component with hasActiveJob prop
 function QuickBookJobCard({
   job,
   onAccept,
   onDecline,
   isLoading,
+  hasActiveJob = false,
 }: {
   job: QuickBookJob;
   onAccept: (jobId: string) => void;
   onDecline: (jobId: string) => void;
   isLoading: boolean;
+  hasActiveJob?: boolean;
 }) {
   const [timeLeft, setTimeLeft] = useState(30);
 
@@ -951,14 +1180,23 @@ function QuickBookJobCard({
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* 🚨 UPDATED: Action Buttons */}
       <div className="flex gap-2">
         <button
           onClick={() => onAccept(job.id)}
-          disabled={isLoading || timeLeft <= 0}
-          className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          disabled={isLoading || timeLeft <= 0 || hasActiveJob}
+          className={`flex-1 px-4 py-2 rounded-md font-medium ${
+            hasActiveJob
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-green-600 text-white hover:bg-green-700"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {isLoading ? "Accepting..." : "Accept Job"}
+          {hasActiveJob 
+            ? "Complete Current Job First" 
+            : isLoading 
+              ? "Accepting..." 
+              : "Accept Job"
+          }
         </button>
         <button
           onClick={() => onDecline(job.id)}
@@ -972,17 +1210,19 @@ function QuickBookJobCard({
   );
 }
 
-// Post Quote Job Card Component
+// 🚨 UPDATED: Post Quote Job Card Component with hasActiveJob prop
 function PostQuoteJobCard({
   job,
   onBid,
   formatTimeAgo,
   demoMode = false,
+  hasActiveJob = false,
 }: {
   job: PostQuoteJob;
   onBid: (job: PostQuoteJob) => void;
   formatTimeAgo: (dateString: string) => string;
   demoMode?: boolean;
+  hasActiveJob?: boolean;
 }) {
   const { user } = useUser();
   const boostBid = async () => {
@@ -1065,7 +1305,7 @@ function PostQuoteJobCard({
         )}
       </div>
 
-      {/* Action Button */}
+      {/* 🚨 UPDATED: Action Button */}
       <div>
         {job.hasUserBid && !demoMode ? (
           <button
@@ -1077,9 +1317,14 @@ function PostQuoteJobCard({
         ) : (
           <button
             onClick={() => onBid(job)}
-            className="w-full bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 font-medium"
+            disabled={hasActiveJob}
+            className={`w-full px-4 py-2 rounded-md font-medium ${
+              hasActiveJob
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-orange-600 text-white hover:bg-orange-700"
+            }`}
           >
-            Submit Bid
+            {hasActiveJob ? "Complete Current Job First" : "Submit Bid"}
           </button>
         )}
       </div>
