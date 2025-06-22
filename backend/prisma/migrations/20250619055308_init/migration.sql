@@ -1,3 +1,4 @@
+
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('CUSTOMER', 'PROVIDER', 'ADMIN');
 
