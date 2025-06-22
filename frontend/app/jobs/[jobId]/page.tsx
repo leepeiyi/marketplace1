@@ -189,7 +189,7 @@ export default function JobDetailsPage() {
           <div className="flex items-center justify-between">
             <div>
               <button
-                onClick={() => router.push('/dashboard')}
+                onClick={() => router.push('/')}
                 className="text-blue-600 hover:text-blue-700 mb-2 flex items-center gap-1"
               >
                 ← Back to Dashboard

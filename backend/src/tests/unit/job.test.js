@@ -28,6 +28,7 @@ describe("JobService Unit Tests", () => {
       provider: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
       },
       user: {
         findMany: jest.fn(),
@@ -178,7 +179,7 @@ describe("JobService Unit Tests", () => {
           categoryId: "category1",
           title: "Fix sink",
           type: "QUICK_BOOK",
-          status: "PENDING",
+          status: "BROADCASTED",
           estimatedPrice: 150,
         }),
         include: {

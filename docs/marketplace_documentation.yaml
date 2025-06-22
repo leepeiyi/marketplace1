@@ -1,0 +1,1198 @@
+maropenapi: 3.0.3
+info:
+  title: Quickly Marketplace API
+  description: "The Quickly Marketplace API provides endpoints for managing a two-sided marketplace \nconnecting customers with service providers. The API supports real-time communication \nvia WebSockets and implements two distinct booking flows: Quick Book (instant hiring) \nand Post & Quote (competitive bidding).\n"
+  contact:
+    name: Quickly API Support
+    email: support@quickly.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  version: 1.0.0
+externalDocs:
+  description: Find out more about Quickly Marketplace
+  url: https://docs.quickly.com
+servers:
+- url: http://localhost:3002/api
+  description: Development server
+- url: https://api.quickly.com/api
+  description: Production server
+security:
+- UserAuth: []
+tags:
+- name: Jobs
+  description: Job creation and management
+- name: Bids
+  description: Bid submission and management
+- name: Categories
+  description: Service categories
+- name: Users
+  description: User management
+- name: Escrow
+  description: Payment simulation
+paths:
+  /jobs/quick-book:
+    post:
+      tags:
+      - Jobs
+      summary: Create Quick Book Job
+      description: Creates an instant booking job that gets broadcast to nearby providers for immediate acceptance.
+      operationId: createQuickBookJob
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuickBookJobRequest'
+        required: true
+      responses:
+        "201":
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/post-quote:
+    post:
+      tags:
+      - Jobs
+      summary: Create Post & Quote Job
+      description: Creates a bidding job that gets broadcast to providers in three stages with optional auto-hire price.
+      operationId: createPostQuoteJob
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostQuoteJobRequest'
+        required: true
+      responses:
+        "201":
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/accept:
+    post:
+      tags:
+      - Jobs
+      summary: Accept Quick Book Job
+      description: Provider accepts a quick book job (first-come-first-served).
+      operationId: acceptQuickBookJob
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptJobRequest'
+        required: true
+      responses:
+        "200":
+          description: Job accepted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptJobResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/available:
+    get:
+      tags:
+      - Jobs
+      summary: Get Available Jobs
+      description: Returns jobs available to the authenticated provider based on location and categories.
+      operationId: getAvailableJobs
+      responses:
+        "200":
+          description: Available jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableJobsResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/customer:
+    get:
+      tags:
+      - Jobs
+      summary: Get Customer Jobs
+      description: Returns all jobs created by the authenticated customer.
+      operationId: getCustomerJobs
+      responses:
+        "200":
+          description: Customer jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerJob'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/provider:
+    get:
+      tags:
+      - Jobs
+      summary: Get Provider Jobs
+      description: Returns all jobs assigned to the authenticated provider.
+      operationId: getProviderJobs
+      responses:
+        "200":
+          description: Provider jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderJob'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/{jobId}:
+    get:
+      tags:
+      - Jobs
+      summary: Get Job Details
+      description: Returns detailed information about a specific job.
+      operationId: getJobDetails
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Job details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetails'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /jobs/{jobId}/cancel:
+    post:
+      tags:
+      - Jobs
+      summary: Cancel Job
+      description: Cancels a job (available to both customer and provider).
+      operationId: cancelJob
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Job cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /bids:
+    post:
+      tags:
+      - Bids
+      summary: Submit Bid
+      description: Provider submits a bid on a Post & Quote job.
+      operationId: submitBid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBidRequest'
+        required: true
+      responses:
+        "201":
+          description: Bid submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bid'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /bids/{jobId}/ranked-bids:
+    get:
+      tags:
+      - Bids
+      summary: Get Ranked Bids
+      description: Returns bids for a job ranked by algorithm (price × rating × ETA).
+      operationId: getRankedBids
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Ranked bids retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RankedBid'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /bids/{bidId}/accept:
+    post:
+      tags:
+      - Bids
+      summary: Accept Bid
+      description: Customer accepts a specific bid.
+      operationId: acceptBid
+      parameters:
+      - name: bidId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Bid accepted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptBidResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /bids/{bidId}/boost:
+    post:
+      tags:
+      - Bids
+      summary: Boost Bid
+      description: Provider boosts their bid to appear at top of rankings.
+      operationId: boostBid
+      parameters:
+      - name: bidId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Bid boosted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /categories:
+    get:
+      tags:
+      - Categories
+      summary: Get All Categories
+      description: Returns all active service categories.
+      operationId: getCategories
+      responses:
+        "200":
+          description: Categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /categories/{categoryId}:
+    get:
+      tags:
+      - Categories
+      summary: Get Category Details
+      description: Returns details for a specific category.
+      operationId: getCategoryDetails
+      parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Category details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /categories/price-range/{categoryId}:
+    get:
+      tags:
+      - Categories
+      summary: Get Price Range
+      description: Returns historical price guidance for a category.
+      operationId: getPriceRange
+      parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Price range retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceRange'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /users/profile:
+    get:
+      tags:
+      - Users
+      summary: Get User Profile
+      description: Returns the authenticated user's profile.
+      operationId: getUserProfile
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /users:
+    post:
+      tags:
+      - Users
+      summary: Create/Update User
+      description: Creates a new user or updates existing user by email.
+      operationId: createUpdateUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+        required: true
+      responses:
+        "201":
+          description: User created/updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /users/by-email/{email}:
+    get:
+      tags:
+      - Users
+      summary: Get User by Email
+      description: Returns user profile by email address.
+      operationId: getUserByEmail
+      parameters:
+      - name: email
+        in: path
+        required: true
+        schema:
+          type: string
+          format: email
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /escrow/job/{jobId}:
+    get:
+      tags:
+      - Escrow
+      summary: Get Escrow Status
+      description: Returns escrow status for a job.
+      operationId: getEscrowStatus
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Escrow status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Escrow'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+  /escrow/{escrowId}/release:
+    post:
+      tags:
+      - Escrow
+      summary: Release Escrow
+      description: Customer releases held funds to provider.
+      operationId: releaseEscrow
+      parameters:
+      - name: escrowId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Escrow released successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Escrow'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+components:
+  schemas:
+    CreateQuickBookJobRequest:
+      required:
+      - address
+      - arrivalWindow
+      - categoryId
+      - description
+      - latitude
+      - longitude
+      - title
+      type: object
+      properties:
+        categoryId:
+          type: string
+          description: Service category identifier
+          format: uuid
+        title:
+          maxLength: 200
+          minLength: 1
+          type: string
+          description: Job title
+        description:
+          maxLength: 2000
+          minLength: 1
+          type: string
+          description: Job description
+        latitude:
+          maximum: 90
+          minimum: -90
+          type: number
+          description: Job location latitude
+          format: double
+        longitude:
+          maximum: 180
+          minimum: -180
+          type: number
+          description: Job location longitude
+          format: double
+        address:
+          maxLength: 500
+          minLength: 1
+          type: string
+          description: Job address
+        arrivalWindow:
+          maximum: 24
+          minimum: 1
+          type: integer
+          description: Desired arrival window in hours
+    CreatePostQuoteJobRequest:
+      required:
+      - address
+      - categoryId
+      - description
+      - latitude
+      - longitude
+      - title
+      type: object
+      properties:
+        categoryId:
+          type: string
+          description: Service category identifier
+          format: uuid
+        title:
+          maxLength: 200
+          minLength: 1
+          type: string
+          description: Job title
+        description:
+          maxLength: 2000
+          minLength: 1
+          type: string
+          description: Job description
+        latitude:
+          maximum: 90
+          minimum: -90
+          type: number
+          description: Job location latitude
+          format: double
+        longitude:
+          maximum: 180
+          minimum: -180
+          type: number
+          description: Job location longitude
+          format: double
+        address:
+          maxLength: 500
+          minLength: 1
+          type: string
+          description: Job address
+        acceptPrice:
+          minimum: 0
+          type: number
+          description: Optional auto-hire threshold price
+          format: double
+    AcceptJobRequest:
+      required:
+      - jobId
+      type: object
+      properties:
+        jobId:
+          type: string
+          description: Job identifier to accept
+          format: uuid
+    CreateBidRequest:
+      required:
+      - estimatedEta
+      - jobId
+      - price
+      type: object
+      properties:
+        jobId:
+          type: string
+          description: Job identifier to bid on
+          format: uuid
+        price:
+          minimum: 0
+          type: number
+          description: Bid price
+          format: double
+        note:
+          maxLength: 1000
+          type: string
+          description: Optional bid note
+        estimatedEta:
+          maximum: 480
+          minimum: 15
+          type: integer
+          description: Estimated completion time in minutes
+    CreateUserRequest:
+      required:
+      - email
+      - name
+      - role
+      type: object
+      properties:
+        email:
+          type: string
+          description: User email address
+          format: email
+        name:
+          maxLength: 100
+          minLength: 1
+          type: string
+          description: User full name
+        phone:
+          maxLength: 20
+          type: string
+          description: Optional phone number
+        role:
+          type: string
+          description: User role
+          enum:
+          - CUSTOMER
+          - PROVIDER
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        address:
+          type: string
+        type:
+          type: string
+          enum:
+          - QUICK_BOOK
+          - POST_QUOTE
+        status:
+          type: string
+          enum:
+          - BROADCASTED
+          - BOOKED
+          - IN_PROGRESS
+          - COMPLETED
+          - CANCELLED
+        estimatedPrice:
+          type: number
+          format: double
+        acceptPrice:
+          type: number
+          format: double
+        arrivalWindow:
+          type: integer
+        quickBookDeadline:
+          type: string
+          format: date-time
+        biddingEndsAt:
+          type: string
+          format: date-time
+        broadcastStage:
+          type: integer
+        lastBroadcastAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        category:
+          $ref: '#/components/schemas/Category'
+        customer:
+          $ref: '#/components/schemas/CustomerInfo'
+    CustomerJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum:
+          - BROADCASTED
+          - BOOKED
+          - IN_PROGRESS
+          - COMPLETED
+          - CANCELLED
+        type:
+          type: string
+          enum:
+          - QUICK_BOOK
+          - POST_QUOTE
+        estimatedPrice:
+          type: number
+          format: double
+        createdAt:
+          type: string
+          format: date-time
+        category:
+          $ref: '#/components/schemas/Category'
+        provider:
+          $ref: '#/components/schemas/ProviderInfo'
+        bids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bid'
+    ProviderJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum:
+          - BOOKED
+          - IN_PROGRESS
+          - COMPLETED
+          - CANCELLED
+        estimatedPrice:
+          type: number
+          format: double
+        createdAt:
+          type: string
+          format: date-time
+        category:
+          $ref: '#/components/schemas/Category'
+        customer:
+          $ref: '#/components/schemas/CustomerInfo'
+        escrow:
+          $ref: '#/components/schemas/Escrow'
+    JobDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+          enum:
+          - QUICK_BOOK
+          - POST_QUOTE
+        estimatedPrice:
+          type: number
+          format: double
+        acceptPrice:
+          type: number
+          format: double
+        address:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        category:
+          $ref: '#/components/schemas/Category'
+        customer:
+          $ref: '#/components/schemas/CustomerInfo'
+        provider:
+          $ref: '#/components/schemas/ProviderInfo'
+        bids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bid'
+        escrow:
+          $ref: '#/components/schemas/Escrow'
+    AvailableJobsResponse:
+      type: object
+      properties:
+        available:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableJob'
+        alreadyBid:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableJob'
+    AvailableJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        type:
+          type: string
+          enum:
+          - QUICK_BOOK
+          - POST_QUOTE
+        estimatedPrice:
+          type: number
+          format: double
+        acceptPrice:
+          type: number
+          format: double
+        distance:
+          type: number
+          description: Distance in kilometers
+          format: double
+        address:
+          type: string
+        category:
+          $ref: '#/components/schemas/Category'
+        customer:
+          $ref: '#/components/schemas/CustomerInfo'
+        quickBookDeadline:
+          type: string
+          format: date-time
+        biddingEndsAt:
+          type: string
+          format: date-time
+        hasUserBid:
+          type: boolean
+    Bid:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        price:
+          type: number
+          format: double
+        note:
+          type: string
+        estimatedEta:
+          type: integer
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - REJECTED
+        boostedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        autoHired:
+          type: boolean
+        provider:
+          $ref: '#/components/schemas/ProviderDetails'
+    RankedBid:
+      allOf:
+      - $ref: '#/components/schemas/Bid'
+      - type: object
+        properties:
+          rank_score:
+            type: number
+            description: Calculated ranking score
+            format: double
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        icon:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PriceRange:
+      type: object
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        minPrice:
+          type: number
+          description: 10th percentile price
+          format: double
+        maxPrice:
+          type: number
+          description: 90th percentile price
+          format: double
+        suggestedPrice:
+          type: number
+          description: Median price
+          format: double
+        sampleSize:
+          type: integer
+          description: Number of historical jobs
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum:
+          - CUSTOMER
+          - PROVIDER
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UserProfile:
+      allOf:
+      - $ref: '#/components/schemas/User'
+      - type: object
+        properties:
+          provider:
+            $ref: '#/components/schemas/ProviderProfile'
+    ProviderProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        isAvailable:
+          type: boolean
+        averageRating:
+          type: number
+          format: double
+        totalJobs:
+          type: integer
+        reliabilityScore:
+          type: integer
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderProfile_categories'
+    CustomerInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+    ProviderInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        averageRating:
+          type: number
+          format: double
+        totalJobs:
+          type: integer
+    ProviderDetails:
+      type: object
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderDetails_provider'
+    Escrow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+        status:
+          type: string
+          enum:
+          - HELD
+          - RELEASED
+          - REFUNDED
+        heldAt:
+          type: string
+          format: date-time
+        releasedAt:
+          type: string
+          format: date-time
+        job:
+          $ref: '#/components/schemas/Job'
+    AcceptJobResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        job:
+          $ref: '#/components/schemas/Job'
+        escrow:
+          $ref: '#/components/schemas/Escrow'
+        message:
+          type: string
+    AcceptBidResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        job:
+          $ref: '#/components/schemas/Job'
+        bid:
+          $ref: '#/components/schemas/Bid'
+        escrow:
+          $ref: '#/components/schemas/Escrow'
+        message:
+          type: string
+        redirect:
+          $ref: '#/components/schemas/AcceptBidResponse_redirect'
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+    ProviderProfile_categories:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+    ProviderDetails_provider:
+      type: object
+      properties:
+        name:
+          type: string
+        averageRating:
+          type: number
+          format: double
+        totalJobs:
+          type: integer
+        phone:
+          type: string
+        badges:
+          type: array
+          items:
+            type: string
+    AcceptBidResponse_redirect:
+      type: object
+      properties:
+        url:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  securitySchemes:
+    UserAuth:
+      type: apiKey
+      description: User ID for authentication
+      name: x-user-id
+      in: header
