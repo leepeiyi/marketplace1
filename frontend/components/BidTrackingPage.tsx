@@ -39,6 +39,8 @@ interface Bid {
   note: string;
   estimatedEta: number;
   createdAt: string;
+  boostedAt?: string | null; // 👈 ADD THIS
+  status: string; // 👈 AND THIS
   provider: {
     provider: {
       id: string;
@@ -92,11 +94,15 @@ function BidCard({
               <h3 className="font-semibold text-gray-900">
                 {bid.provider.provider.name}
               </h3>
-              {getBidRankText(bid, index) && (
+              {getBidRankText(bid, index) ? (
                 <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
                   {getBidRankText(bid, index)}
                 </span>
-              )}
+              ) : bid.boostedAt && bid.status === "PENDING" ? (
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  📌 Boosted
+                </span>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-4 text-sm text-gray-600">
@@ -131,9 +137,6 @@ function BidCard({
         {/* Price */}
         <div className="text-right">
           <div className="text-2xl font-bold text-green-600">${bid.price}</div>
-          <div className="text-sm text-gray-500">
-            {((bid.price / job.estimatedPrice) * 100).toFixed(0)}% of estimate
-          </div>
         </div>
       </div>
 
@@ -307,7 +310,7 @@ export default function BidTrackingPage() {
   const [isAccepting, setIsAccepting] = useState(false);
   const [selectedBid, setSelectedBid] = useState<Bid | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [sortBy, setSortBy] = useState("price");
+  const [sortBy, setSortBy] = useState("default");
   const [timeLeft, setTimeLeft] = useState("");
 
   // Load job and bids data
@@ -519,6 +522,7 @@ export default function BidTrackingPage() {
   };
 
   const getBidRankText = (bid: Bid, index: number) => {
+    if (bid.boostedAt && bid.status === "PENDING") return "";
     if (index === 0 && sortBy === "price") return "🏆 Best Price";
     if (index === 0 && sortBy === "rating") return "⭐ Top Rated";
     if (job?.acceptPrice && bid.price <= job.acceptPrice)
@@ -668,6 +672,7 @@ export default function BidTrackingPage() {
                       onChange={(e) => setSortBy(e.target.value)}
                       className="text-sm border border-gray-300 rounded-md px-3 py-1"
                     >
+                      <option value="default">Best Match (Default)</option>
                       <option value="price">Sort by Price</option>
                       <option value="rating">Sort by Rating</option>
                       <option value="time">Sort by Time</option>

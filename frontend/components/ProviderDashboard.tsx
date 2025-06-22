@@ -30,6 +30,7 @@ interface PostQuoteJob {
   customer: {
     name: string;
   };
+  bidId?: string;
   estimatedPrice: number;
   acceptPrice?: number;
   distance: number;
@@ -37,6 +38,8 @@ interface PostQuoteJob {
   biddingEndsAt?: string;
   bidsCount?: number;
   hasUserBid?: boolean;
+  boostedAt?: string | null;
+  status?: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002";
@@ -221,6 +224,9 @@ export function ProviderDashboard() {
               biddingEndsAt: job.biddingEndsAt,
               bidsCount: job.bidsCount || 0,
               hasUserBid: job.hasUserBid || false,
+              bidId: job.bidId || null,
+              boostedAt: job.boostedAt || null,
+              status: job.status || "PENDING",
             });
           }
         }
@@ -978,6 +984,35 @@ function PostQuoteJobCard({
   formatTimeAgo: (dateString: string) => string;
   demoMode?: boolean;
 }) {
+  const { user } = useUser();
+  const boostBid = async () => {
+    try {
+      if (!job.bidId) {
+        alert("❌ Missing bid ID");
+        return;
+      }
+
+      const res = await fetch(`${API_URL}/api/bids/${job.bidId}/boost`, {
+        method: "POST",
+        headers: {
+          "x-user-id": user?.id || "",
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert("❌ " + data.error);
+        return;
+      }
+
+      alert("✅ Your bid has been boosted!");
+      window.location.reload();
+    } catch (err) {
+      console.error("❌ Boost error:", err);
+      alert("❌ Failed to boost bid");
+    }
+  };
+
   return (
     <div className="border rounded-lg p-4 bg-orange-50 border-orange-200">
       {/* Job Header */}
@@ -997,6 +1032,13 @@ function PostQuoteJobCard({
             ${job.estimatedPrice}
           </div>
           <div className="text-sm text-gray-500">{job.distance}km away</div>
+
+          {/* BOOSTED BADGE */}
+          {job.boostedAt && job.status === "PENDING" && (
+            <div className="mt-1 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full inline-block">
+              📌 Boosted
+            </div>
+          )}
         </div>
       </div>
 
@@ -1041,6 +1083,18 @@ function PostQuoteJobCard({
           </button>
         )}
       </div>
+      {job.hasUserBid &&
+        (job.status === "PENDING" || job.status === "BROADCASTED") &&
+        !job.boostedAt &&
+        !demoMode && (
+          <button
+            onClick={boostBid}
+            className="mt-3 w-full flex items-center justify-center gap-2 border border-blue-600 text-blue-600 hover:bg-blue-50 font-medium text-sm px-4 py-2 rounded-md transition"
+          >
+            <span className="text-base">📈</span>
+            Boost My Bid
+          </button>
+        )}
     </div>
   );
 }

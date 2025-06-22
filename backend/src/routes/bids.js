@@ -315,8 +315,8 @@ router.get("/:jobId/ranked-bids", requireAuth, async (req, res) => {
       const provider = bid.provider?.provider;
 
       const normPrice = 1 - normalize(bid.price, minPrice, maxPrice); // lower price = higher score
-      const normRating = (provider?.averageRating || 0) / 5; // already 0–1
-      const normEta = 1 - normalize(bid.estimatedEta, minEta, maxEta); // lower ETA = higher score
+      const normRating = (provider?.averageRating || 0) / 5;
+      const normEta = 1 - normalize(bid.estimatedEta, minEta, maxEta);
       const normReliability = (provider?.reliabilityScore || 100) / 100;
 
       const score =
@@ -327,12 +327,22 @@ router.get("/:jobId/ranked-bids", requireAuth, async (req, res) => {
 
       return {
         ...bid,
-        rank_score: Math.round(score * 100) / 100, // round to 2dp
+        rank_score: Math.round(score * 100) / 100,
       };
     });
 
-    // Sort by score descending
-    rankedBids.sort((a, b) => b.rank_score - a.rank_score);
+    // Boost logic: pin if boostedAt is set and status is still PENDING
+    const isBoosted = (boostedAt, status) => boostedAt && status === "PENDING";
+
+    rankedBids.sort((a, b) => {
+      const aBoosted = isBoosted(a.boostedAt, a.status);
+      const bBoosted = isBoosted(b.boostedAt, b.status);
+
+      if (aBoosted && !bBoosted) return -1;
+      if (!aBoosted && bBoosted) return 1;
+
+      return b.rank_score - a.rank_score;
+    });
 
     res.json(rankedBids);
   } catch (error) {
@@ -750,6 +760,42 @@ router.delete("/:bidId", writeLimiter, requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Error withdrawing bid:", error);
     res.status(500).json({ error: "Failed to withdraw bid" });
+  }
+});
+
+// Boost a bid – allows provider to promote their bid to top of the list temporarily
+router.post("/:bidId/boost", writeLimiter, requireAuth, async (req, res) => {
+  const { bidId } = req.params;
+  const providerId = req.userId;
+
+  try {
+    const bid = await req.prisma.bid.findUnique({
+      where: { id: bidId },
+    });
+
+    if (!bid) {
+      return res.status(404).json({ error: "Bid not found" });
+    }
+
+    if (bid.providerId !== providerId) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    if (bid.boostedAt) {
+      return res.status(409).json({ error: "Already boosted" });
+    }
+
+    await req.prisma.bid.update({
+      where: { id: bidId },
+      data: {
+        boostedAt: new Date(),
+      },
+    });
+
+    res.json({ success: true, message: "✅ Bid boosted successfully" });
+  } catch (error) {
+    console.error("❌ Error boosting bid:", error);
+    res.status(500).json({ error: "Failed to boost bid" });
   }
 });
 

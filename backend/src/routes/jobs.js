@@ -218,6 +218,7 @@ router.get("/available", requireAuth, async (req, res) => {
         address: job.address,
         latitude: job.latitude,
         longitude: job.longitude,
+        
       };
     });
 
@@ -269,6 +270,7 @@ router.get("/available", requireAuth, async (req, res) => {
         latitude: job.latitude,
         longitude: job.longitude,
         hasUserBid: hasPendingBid,
+        bidId: hasPendingBid ? job.bids.find((b) => b.status === "PENDING")?.id : null,
       };
 
       if (job.type === "POST_QUOTE" && hasPendingBid) {
