@@ -48,9 +48,9 @@ cd frontend
 Complete API Documentation
 You can view the interactive documentation by:
 
-Swagger UI: Copy docs/marketplace_documentation.yaml to Swagger Editor
-Local Swagger: npx swagger-ui-serve docs/marketplace_documentation.yaml
-Postman: Import the OpenAPI file for testing
+  - Swagger UI: Copy docs/marketplace_documentation.yaml to Swagger Editor
+  - Local Swagger: npx swagger-ui-serve docs/marketplace_documentation.yaml
+  - Postman: Import the OpenAPI file for testing
 
 ## Test
 ```bash
