@@ -42,19 +42,20 @@ npm run start
 
 # Frontend setup (new terminal)
 cd frontend
+```
 
-### Test
-bash# Run all tests
+## Test
+```bash
 npm test
 
-# Run with coverage
+#Run with coverage
 npm run test:coverage
 
-# Run specific test suites
+#Run specific test suites
 npm run test:unit
 npm run test:integration
 
-# Run tests in watch mode
+#Run tests in watch mode
 npm run test:watch
 npm install
 npm run dev
