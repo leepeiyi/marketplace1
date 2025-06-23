@@ -42,6 +42,8 @@ npm run start
 
 # Frontend setup (new terminal)
 cd frontend
+npm install
+npm run dev
 ```
 
 ### API Reference
